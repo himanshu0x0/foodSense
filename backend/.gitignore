@@ -1,0 +1,38 @@
+# FoodSense backend - local/private files
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.json
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache/compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test/cache/tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local model artifacts
+models/
+*.pkl
+*.joblib
+*.onnx
+
+# IDE / OS files
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db

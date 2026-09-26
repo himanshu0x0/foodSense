@@ -1,0 +1,20 @@
+# FoodSense backend dependencies
+#
+# Phase 2 foundation:
+# - FastAPI API layer
+# - Uvicorn development server
+# - Firebase Admin authentication
+# - Google Cloud Firestore access
+# - Pydantic request/response validation
+#
+# Keep ML/data-science packages out until the forecasting model layer needs
+# them. This keeps the Phase 2 foundation lightweight.
+
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+firebase-admin>=6.5,<8.0
+google-cloud-firestore>=2.19,<3.0
+pydantic>=2.7,<3.0
+
+# Optional environment-file support for local development.
+python-dotenv>=1.0,<2.0
