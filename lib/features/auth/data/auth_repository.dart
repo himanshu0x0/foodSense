@@ -16,11 +16,9 @@ import '../models/user_model.dart';
 /// Organization-specific data is handled separately by the organization
 /// feature in Phase 1.
 class AuthRepository {
-  AuthRepository({
-    FirebaseAuth? auth,
-    FirebaseFirestore? firestore,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+  AuthRepository({FirebaseAuth? auth, FirebaseFirestore? firestore})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -89,10 +87,9 @@ class AuthRepository {
     );
 
     try {
-      await _usersCollection.doc(firebaseUser.uid).set(
-            userModel.toMap(),
-            SetOptions(merge: true),
-          );
+      await _usersCollection
+          .doc(firebaseUser.uid)
+          .set(userModel.toMap(), SetOptions(merge: true));
 
       return userModel;
     } catch (_) {
@@ -121,8 +118,7 @@ class AuthRepository {
       throw ArgumentError('Password cannot be empty.');
     }
 
-    final UserCredential credential =
-        await _auth.signInWithEmailAndPassword(
+    final UserCredential credential = await _auth.signInWithEmailAndPassword(
       email: normalizedEmail,
       password: password,
     );
@@ -133,8 +129,7 @@ class AuthRepository {
       throw StateError('Firebase did not return a user after sign-in.');
     }
 
-    final UserModel? existingProfile =
-        await getUserProfile(firebaseUser.uid);
+    final UserModel? existingProfile = await getUserProfile(firebaseUser.uid);
 
     if (existingProfile != null) {
       return existingProfile;
@@ -150,10 +145,9 @@ class AuthRepository {
       organizationId: '',
     );
 
-    await _usersCollection.doc(firebaseUser.uid).set(
-          fallbackProfile.toMap(),
-          SetOptions(merge: true),
-        );
+    await _usersCollection
+        .doc(firebaseUser.uid)
+        .set(fallbackProfile.toMap(), SetOptions(merge: true));
 
     return fallbackProfile;
   }
@@ -200,9 +194,8 @@ class AuthRepository {
 
   /// Updates the minimal FoodSense user profile.
   Future<void> updateUserProfile(UserModel user) async {
-    await _usersCollection.doc(user.uid).set(
-          user.toMap(),
-          SetOptions(merge: true),
-        );
+    await _usersCollection
+        .doc(user.uid)
+        .set(user.toMap(), SetOptions(merge: true));
   }
 }

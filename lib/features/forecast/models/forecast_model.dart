@@ -62,14 +62,8 @@ class ForecastModel {
         map['organization_id'],
         field: 'organization_id',
       ),
-      forecastDate: _dateValue(
-        map['forecast_date'],
-        field: 'forecast_date',
-      ),
-      mealType: _stringValue(
-        map['meal_type'],
-        field: 'meal_type',
-      ),
+      forecastDate: _dateValue(map['forecast_date'], field: 'forecast_date'),
+      mealType: _stringValue(map['meal_type'], field: 'meal_type'),
       expectedPeople: _intValue(
         map['expected_people'],
         field: 'expected_people',
@@ -78,10 +72,7 @@ class ForecastModel {
         map['predicted_demand'],
         field: 'predicted_demand',
       ),
-      safetyBuffer: _intValue(
-        map['safety_buffer'],
-        field: 'safety_buffer',
-      ),
+      safetyBuffer: _intValue(map['safety_buffer'], field: 'safety_buffer'),
       recommendedProduction: _intValue(
         map['recommended_production'],
         field: 'recommended_production',
@@ -92,23 +83,14 @@ class ForecastModel {
       ),
       confidence: map['confidence'] == null
           ? null
-          : _doubleValue(
-              map['confidence'],
-              field: 'confidence',
-            ),
-      method: _stringValue(
-        map['method'],
-        field: 'method',
-      ),
+          : _doubleValue(map['confidence'], field: 'confidence'),
+      method: _stringValue(map['method'], field: 'method'),
       trainingRecords: _intValue(
         map['training_records'],
         field: 'training_records',
       ),
       fallbackUsed: map['fallback_used'] == true,
-      generatedAt: _dateTimeValue(
-        map['generated_at'],
-        field: 'generated_at',
-      ),
+      generatedAt: _dateTimeValue(map['generated_at'], field: 'generated_at'),
     );
   }
 
@@ -117,9 +99,7 @@ class ForecastModel {
     final dynamic decoded = jsonDecode(source);
 
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException(
-        'Forecast response must be a JSON object.',
-      );
+      throw const FormatException('Forecast response must be a JSON object.');
     }
 
     return ForecastModel.fromMap(decoded);
@@ -174,8 +154,7 @@ class ForecastModel {
       safetyBuffer: safetyBuffer ?? this.safetyBuffer,
       recommendedProduction:
           recommendedProduction ?? this.recommendedProduction,
-      safetyBufferPercent:
-          safetyBufferPercent ?? this.safetyBufferPercent,
+      safetyBufferPercent: safetyBufferPercent ?? this.safetyBufferPercent,
       confidence: confidence ?? this.confidence,
       method: method ?? this.method,
       trainingRecords: trainingRecords ?? this.trainingRecords,
@@ -247,25 +226,22 @@ class ForecastModel {
 
   @override
   int get hashCode => Object.hash(
-        organizationId,
-        forecastDate,
-        mealType,
-        expectedPeople,
-        predictedDemand,
-        safetyBuffer,
-        recommendedProduction,
-        safetyBufferPercent,
-        confidence,
-        method,
-        trainingRecords,
-        fallbackUsed,
-        generatedAt,
-      );
+    organizationId,
+    forecastDate,
+    mealType,
+    expectedPeople,
+    predictedDemand,
+    safetyBuffer,
+    recommendedProduction,
+    safetyBufferPercent,
+    confidence,
+    method,
+    trainingRecords,
+    fallbackUsed,
+    generatedAt,
+  );
 
-  static String _stringValue(
-    dynamic value, {
-    required String field,
-  }) {
+  static String _stringValue(dynamic value, {required String field}) {
     if (value is String && value.trim().isNotEmpty) {
       return value.trim();
     }
@@ -275,10 +251,7 @@ class ForecastModel {
     );
   }
 
-  static int _intValue(
-    dynamic value, {
-    required String field,
-  }) {
+  static int _intValue(dynamic value, {required String field}) {
     if (value is int) {
       return value;
     }
@@ -295,15 +268,10 @@ class ForecastModel {
       }
     }
 
-    throw FormatException(
-      'Forecast field "$field" must be an integer.',
-    );
+    throw FormatException('Forecast field "$field" must be an integer.');
   }
 
-  static double _doubleValue(
-    dynamic value, {
-    required String field,
-  }) {
+  static double _doubleValue(dynamic value, {required String field}) {
     if (value is num) {
       return value.toDouble();
     }
@@ -316,44 +284,26 @@ class ForecastModel {
       }
     }
 
-    throw FormatException(
-      'Forecast field "$field" must be a number.',
-    );
+    throw FormatException('Forecast field "$field" must be a number.');
   }
 
-  static DateTime _dateValue(
-    dynamic value, {
-    required String field,
-  }) {
+  static DateTime _dateValue(dynamic value, {required String field}) {
     if (value is DateTime) {
-      return DateTime(
-        value.year,
-        value.month,
-        value.day,
-      );
+      return DateTime(value.year, value.month, value.day);
     }
 
     if (value is String) {
       final DateTime? parsed = DateTime.tryParse(value);
 
       if (parsed != null) {
-        return DateTime(
-          parsed.year,
-          parsed.month,
-          parsed.day,
-        );
+        return DateTime(parsed.year, parsed.month, parsed.day);
       }
     }
 
-    throw FormatException(
-      'Forecast field "$field" must be a valid date.',
-    );
+    throw FormatException('Forecast field "$field" must be a valid date.');
   }
 
-  static DateTime _dateTimeValue(
-    dynamic value, {
-    required String field,
-  }) {
+  static DateTime _dateTimeValue(dynamic value, {required String field}) {
     if (value is DateTime) {
       return value;
     }
@@ -366,9 +316,7 @@ class ForecastModel {
       }
     }
 
-    throw FormatException(
-      'Forecast field "$field" must be a valid timestamp.',
-    );
+    throw FormatException('Forecast field "$field" must be a valid timestamp.');
   }
 
   static String _dateOnlyString(DateTime value) {

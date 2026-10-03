@@ -4,6 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 ///
 /// Firestore document path:
 /// organizations/{organizationId}/food_records/{recordId}
+///
+/// Media:
+/// Food record photos are stored in Cloudinary. Firestore stores only the
+/// Cloudinary delivery URL and public ID needed to display/manage the asset.
 class DailyFoodRecord {
   const DailyFoodRecord({
     required this.id,
@@ -18,6 +22,8 @@ class DailyFoodRecord {
     required this.mealsRemaining,
     required this.wasteKg,
     required this.specialEvent,
+    this.imageUrl,
+    this.imagePublicId,
     this.createdBy,
     this.createdAt,
     this.updatedBy,
@@ -50,11 +56,20 @@ class DailyFoodRecord {
   /// Marks unusual-demand days such as events or special programs.
   final bool specialEvent;
 
+  /// HTTPS Cloudinary delivery URL for the food-record photo.
+  final String? imageUrl;
+
+  /// Cloudinary public ID used to manage/delete the uploaded asset.
+  final String? imagePublicId;
+
   final String? createdBy;
   final DateTime? createdAt;
 
   final String? updatedBy;
   final DateTime? updatedAt;
+
+  /// Whether this food record currently has an attached Cloudinary image.
+  bool get hasImage => imageUrl != null && imageUrl!.trim().isNotEmpty;
 
   /// Creates a model from a Firestore document.
   factory DailyFoodRecord.fromDocument(
@@ -62,17 +77,11 @@ class DailyFoodRecord {
   ) {
     final Map<String, dynamic> data = document.data() ?? <String, dynamic>{};
 
-    return DailyFoodRecord.fromMap(
-      data,
-      id: document.id,
-    );
+    return DailyFoodRecord.fromMap(data, id: document.id);
   }
 
   /// Creates a model from a Firestore map.
-  factory DailyFoodRecord.fromMap(
-    Map<String, dynamic> map, {
-    String? id,
-  }) {
+  factory DailyFoodRecord.fromMap(Map<String, dynamic> map, {String? id}) {
     return DailyFoodRecord(
       id: id ?? (map['id'] as String? ?? ''),
       organizationId: map['organizationId'] as String? ?? '',
@@ -86,6 +95,8 @@ class DailyFoodRecord {
       mealsRemaining: _intFromValue(map['mealsRemaining']),
       wasteKg: _doubleFromValue(map['wasteKg']),
       specialEvent: map['specialEvent'] == true,
+      imageUrl: _stringFromValue(map['imageUrl']),
+      imagePublicId: _stringFromValue(map['imagePublicId']),
       createdBy: map['createdBy'] as String?,
       createdAt: _dateTimeFromValue(map['createdAt']),
       updatedBy: map['updatedBy'] as String?,
@@ -97,9 +108,7 @@ class DailyFoodRecord {
   ///
   /// The [id] is intentionally not written because it is already the
   /// Firestore document ID.
-  Map<String, dynamic> toMap({
-    bool includeMetadata = true,
-  }) {
+  Map<String, dynamic> toMap({bool includeMetadata = true}) {
     final Map<String, dynamic> map = <String, dynamic>{
       'organizationId': organizationId,
       'recordDate': Timestamp.fromDate(recordDate),
@@ -112,6 +121,9 @@ class DailyFoodRecord {
       'mealsRemaining': mealsRemaining,
       'wasteKg': wasteKg,
       'specialEvent': specialEvent,
+      if (imageUrl != null && imageUrl!.trim().isNotEmpty) 'imageUrl': imageUrl,
+      if (imagePublicId != null && imagePublicId!.trim().isNotEmpty)
+        'imagePublicId': imagePublicId,
     };
 
     if (includeMetadata) {
@@ -140,6 +152,8 @@ class DailyFoodRecord {
     int? mealsRemaining,
     double? wasteKg,
     bool? specialEvent,
+    String? imageUrl,
+    String? imagePublicId,
     String? createdBy,
     DateTime? createdAt,
     String? updatedBy,
@@ -158,6 +172,8 @@ class DailyFoodRecord {
       mealsRemaining: mealsRemaining ?? this.mealsRemaining,
       wasteKg: wasteKg ?? this.wasteKg,
       specialEvent: specialEvent ?? this.specialEvent,
+      imageUrl: imageUrl ?? this.imageUrl,
+      imagePublicId: imagePublicId ?? this.imagePublicId,
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
       updatedBy: updatedBy ?? this.updatedBy,
@@ -193,6 +209,8 @@ class DailyFoodRecord {
         other.mealsRemaining == mealsRemaining &&
         other.wasteKg == wasteKg &&
         other.specialEvent == specialEvent &&
+        other.imageUrl == imageUrl &&
+        other.imagePublicId == imagePublicId &&
         other.createdBy == createdBy &&
         other.createdAt == createdAt &&
         other.updatedBy == updatedBy &&
@@ -201,23 +219,25 @@ class DailyFoodRecord {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        organizationId,
-        recordDate,
-        mealType,
-        menu,
-        expectedPeople,
-        actualPeople,
-        mealsPrepared,
-        mealsConsumed,
-        mealsRemaining,
-        wasteKg,
-        specialEvent,
-        createdBy,
-        createdAt,
-        updatedBy,
-        updatedAt,
-      );
+    id,
+    organizationId,
+    recordDate,
+    mealType,
+    menu,
+    expectedPeople,
+    actualPeople,
+    mealsPrepared,
+    mealsConsumed,
+    mealsRemaining,
+    wasteKg,
+    specialEvent,
+    imageUrl,
+    imagePublicId,
+    createdBy,
+    createdAt,
+    updatedBy,
+    updatedAt,
+  );
 
   @override
   String toString() {
@@ -233,8 +253,17 @@ class DailyFoodRecord {
         'mealsConsumed: $mealsConsumed, '
         'mealsRemaining: $mealsRemaining, '
         'wasteKg: $wasteKg, '
-        'specialEvent: $specialEvent'
+        'specialEvent: $specialEvent, '
+        'hasImage: $hasImage'
         ')';
+  }
+
+  static String? _stringFromValue(dynamic value) {
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+
+    return null;
   }
 
   static DateTime? _dateTimeFromValue(dynamic value) {

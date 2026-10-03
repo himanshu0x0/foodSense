@@ -1,6 +1,12 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:foodsense/features/inventory/models/inventory_item.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../../core/network/cloudinary_upload_service.dart';
 
 import '../data/inventory_repository.dart';
 
@@ -14,16 +20,18 @@ import '../data/inventory_repository.dart';
 /// - storage type
 /// - optional supplier/cost/reorder level
 class AddInventoryScreen extends StatefulWidget {
-  const AddInventoryScreen({
-    super.key,
-    required this.organizationId,
-  });
+  const AddInventoryScreen({super.key, required this.organizationId});
 
   final String organizationId;
 
   @override
   State<AddInventoryScreen> createState() => _AddInventoryScreenState();
 }
+
+const String foodSenseApiBaseUrl = String.fromEnvironment(
+  'FOODSENSE_API_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8000',
+);
 
 class _AddInventoryScreenState extends State<AddInventoryScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -35,6 +43,11 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
   final _reorderLevelController = TextEditingController();
 
   final InventoryRepository _inventoryRepository = InventoryRepository();
+  final ImagePicker _imagePicker = ImagePicker();
+  late final CloudinaryUploadService _cloudinaryService;
+
+  File? _selectedImage;
+  bool _isPickingImage = false;
 
   static const List<String> _categories = [
     'Grains',
@@ -79,12 +92,22 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
   bool _isSaving = false;
 
   @override
+  void initState() {
+    super.initState();
+
+    _cloudinaryService = CloudinaryUploadService(
+      backendBaseUrl: foodSenseApiBaseUrl,
+    );
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _quantityController.dispose();
     _supplierController.dispose();
     _unitCostController.dispose();
     _reorderLevelController.dispose();
+    _cloudinaryService.dispose();
     super.dispose();
   }
 
@@ -135,6 +158,129 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
     });
   }
 
+  Future<void> _chooseImage() async {
+    if (_isSaving || _isPickingImage) {
+      return;
+    }
+
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('Take a photo'),
+                onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Choose from gallery'),
+                onTap: () =>
+                    Navigator.of(sheetContext).pop(ImageSource.gallery),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isPickingImage = true;
+    });
+
+    try {
+      final XFile? picked = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+
+      if (picked != null && mounted) {
+        setState(() {
+          _selectedImage = File(picked.path);
+        });
+      }
+    } catch (error) {
+      debugPrint('Add inventory image picker error: $error');
+      if (mounted) {
+        _showMessage('Unable to select the inventory photo.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingImage = false;
+        });
+      }
+    }
+  }
+
+  Widget _buildImageSection(ThemeData theme) {
+    final File? image = _selectedImage;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(
+            'Inventory photo',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Optional. The photo will be stored in Cloudinary and linked to '
+            'this inventory item.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          if (image != null) ...<Widget>[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Image.file(image, fit: BoxFit.cover),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          OutlinedButton.icon(
+            onPressed: (_isSaving || _isPickingImage) ? null : _chooseImage,
+            icon: _isPickingImage
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_a_photo_outlined),
+            label: Text(
+              _isPickingImage
+                  ? 'Selecting photo...'
+                  : image == null
+                  ? 'Add inventory photo'
+                  : 'Change photo',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveItem() async {
     FocusManager.instance.primaryFocus?.unfocus();
 
@@ -150,17 +296,15 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
       return;
     }
 
-    final double? quantity =
-        double.tryParse(_quantityController.text.trim());
+    final double? quantity = double.tryParse(_quantityController.text.trim());
 
     final double? unitCost = _unitCostController.text.trim().isEmpty
         ? null
         : double.tryParse(_unitCostController.text.trim());
 
-    final int? reorderLevel =
-        _reorderLevelController.text.trim().isEmpty
-            ? null
-            : int.tryParse(_reorderLevelController.text.trim());
+    final int? reorderLevel = _reorderLevelController.text.trim().isEmpty
+        ? null
+        : int.tryParse(_reorderLevelController.text.trim());
 
     if (quantity == null || quantity < 0) {
       _showMessage('Enter a valid quantity.');
@@ -196,7 +340,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
     });
 
     try {
-      await _inventoryRepository.createItem(
+      final InventoryItem createdItem = await _inventoryRepository.createItem(
         organizationId: widget.organizationId,
         name: _nameController.text,
         category: _selectedCategory!,
@@ -211,6 +355,31 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
         unitCost: unitCost,
         reorderLevel: reorderLevel,
       );
+
+      final File? image = _selectedImage;
+
+      if (image != null) {
+        try {
+          final CloudinaryUploadResult uploadResult = await _cloudinaryService
+              .uploadInventoryImage(
+                file: image,
+                organizationId: widget.organizationId,
+                itemId: createdItem.id,
+              );
+
+          await _inventoryRepository.attachImage(
+            organizationId: widget.organizationId,
+            itemId: createdItem.id,
+            imageUrl: uploadResult.secureUrl,
+            imagePublicId: uploadResult.publicId,
+          );
+        } on CloudinaryUploadException catch (error) {
+          debugPrint('Inventory Cloudinary upload error: $error');
+          if (mounted) {
+            _showMessage('Inventory item saved, but the photo upload failed.');
+          }
+        }
+      }
 
       if (!mounted) return;
 
@@ -229,9 +398,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
 
       debugPrint('Add inventory error: $error');
 
-      _showMessage(
-        _friendlyErrorMessage(error),
-      );
+      _showMessage(_friendlyErrorMessage(error));
     } finally {
       if (mounted) {
         setState(() {
@@ -263,10 +430,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
     return 'Unable to add inventory item. Please try again.';
   }
 
-  String? _requiredTextValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _requiredTextValidator(String? value, {required String label}) {
     if (value == null || value.trim().isEmpty) {
       return '$label is required.';
     }
@@ -294,10 +458,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
   }
 
@@ -342,9 +503,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Inventory Item'),
-      ),
+      appBar: AppBar(title: const Text('Add Inventory Item')),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -379,14 +538,12 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
                         hintText: 'e.g. Rice',
                         prefixIcon: Icon(Icons.inventory_2_outlined),
                       ),
-                      validator: (value) => _requiredTextValidator(
-                        value,
-                        label: 'Item name',
-                      ),
+                      validator: (value) =>
+                          _requiredTextValidator(value, label: 'Item name'),
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      initialValue: _selectedCategory,
+                      value: _selectedCategory,
                       decoration: const InputDecoration(
                         labelText: 'Category',
                         prefixIcon: Icon(Icons.category_outlined),
@@ -430,9 +587,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
                             decoration: const InputDecoration(
                               labelText: 'Quantity',
                               hintText: 'e.g. 50',
-                              prefixIcon: Icon(
-                                Icons.scale_outlined,
-                              ),
+                              prefixIcon: Icon(Icons.scale_outlined),
                             ),
                             validator: _quantityValidator,
                           ),
@@ -440,7 +595,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            initialValue: _selectedUnit,
+                            value: _selectedUnit,
                             decoration: const InputDecoration(
                               labelText: 'Unit',
                             ),
@@ -466,12 +621,10 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      initialValue: _selectedStorageType,
+                      value: _selectedStorageType,
                       decoration: const InputDecoration(
                         labelText: 'Storage type',
-                        prefixIcon: Icon(
-                          Icons.kitchen_outlined,
-                        ),
+                        prefixIcon: Icon(Icons.kitchen_outlined),
                       ),
                       items: _storageTypes
                           .map(
@@ -543,6 +696,8 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
                         prefixIcon: Icon(Icons.warning_amber_outlined),
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    _buildImageSection(theme),
                     const SizedBox(height: 28),
                     ElevatedButton(
                       onPressed: _isSaving ? null : _saveItem,
@@ -558,8 +713,7 @@ class _AddInventoryScreenState extends State<AddInventoryScreen> {
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton(
-                      onPressed:
-                          _isSaving ? null : () => context.pop(),
+                      onPressed: _isSaving ? null : () => context.pop(),
                       child: const Text('Cancel'),
                     ),
                   ],

@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../../core/network/cloudinary_upload_service.dart';
 
 import '../data/food_record_repository.dart';
 import '../models/daily_food_record.dart';
@@ -13,10 +18,7 @@ import '../models/daily_food_record.dart';
 /// Firestore path:
 /// organizations/{organizationId}/food_records/{recordId}
 class DailyRecordScreen extends StatefulWidget {
-  const DailyRecordScreen({
-    super.key,
-    required this.organizationId,
-  });
+  const DailyRecordScreen({super.key, required this.organizationId});
 
   final String organizationId;
 
@@ -24,14 +26,25 @@ class DailyRecordScreen extends StatefulWidget {
   State<DailyRecordScreen> createState() => _DailyRecordScreenState();
 }
 
+/// FastAPI URL used for the Cloudinary signing endpoint.
+///
+/// Override for an Android emulator with:
+/// --dart-define=FOODSENSE_API_BASE_URL=http://10.0.2.2:8000
+///
+/// A physical Android device can use the default when `adb reverse`
+/// is configured for port 8000.
+const String foodSenseApiBaseUrl = String.fromEnvironment(
+  'FOODSENSE_API_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8000',
+);
+
 class _DailyRecordScreenState extends State<DailyRecordScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   final TextEditingController _menuController = TextEditingController();
   final TextEditingController _expectedPeopleController =
       TextEditingController();
-  final TextEditingController _actualPeopleController =
-      TextEditingController();
+  final TextEditingController _actualPeopleController = TextEditingController();
   final TextEditingController _mealsPreparedController =
       TextEditingController();
   final TextEditingController _mealsConsumedController =
@@ -40,6 +53,9 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   final FoodRecordRepository _repository = FoodRecordRepository();
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  final ImagePicker _imagePicker = ImagePicker();
+  late final CloudinaryUploadService _cloudinaryService;
 
   static const List<String> _mealTypes = <String>[
     'Breakfast',
@@ -54,9 +70,16 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   bool _specialEvent = false;
   bool _isSaving = false;
 
+  File? _selectedImage;
+  bool _isPickingImage = false;
+
   @override
   void initState() {
     super.initState();
+
+    _cloudinaryService = CloudinaryUploadService(
+      backendBaseUrl: foodSenseApiBaseUrl,
+    );
 
     _mealsPreparedController.addListener(_refreshPreview);
     _mealsConsumedController.addListener(_refreshPreview);
@@ -73,6 +96,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     _mealsPreparedController.dispose();
     _mealsConsumedController.dispose();
     _wasteKgController.dispose();
+    _cloudinaryService.dispose();
     super.dispose();
   }
 
@@ -98,11 +122,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     }
 
     setState(() {
-      _recordDate = DateTime(
-        picked.year,
-        picked.month,
-        picked.day,
-      );
+      _recordDate = DateTime(picked.year, picked.month, picked.day);
     });
   }
 
@@ -112,6 +132,188 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
 
   double _parseDoubleOrZero(String value) {
     return double.tryParse(value.trim()) ?? 0;
+  }
+
+  Future<void> _chooseImage() async {
+    if (_isSaving || _isPickingImage) {
+      return;
+    }
+
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: const Text('Take a photo'),
+                  subtitle: const Text('Use the device camera'),
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Choose from gallery'),
+                  subtitle: const Text('Select an existing food photo'),
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isPickingImage = true;
+    });
+
+    try {
+      final XFile? picked = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+
+      if (picked == null || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedImage = File(picked.path);
+      });
+    } catch (error) {
+      debugPrint('Food record image picker error: $error');
+
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(
+        'Unable to select the food photo. Please try again.',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingImage = false;
+        });
+      }
+    }
+  }
+
+  void _removeSelectedImage() {
+    if (_isSaving) {
+      return;
+    }
+
+    setState(() {
+      _selectedImage = null;
+    });
+  }
+
+  Widget _buildImageSection(ThemeData theme) {
+    final File? image = _selectedImage;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.image_outlined, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Food photo',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (image != null)
+                IconButton(
+                  tooltip: 'Remove photo',
+                  onPressed: _isSaving ? null : _removeSelectedImage,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Optional. The photo will be uploaded to Cloudinary and linked '
+            'to this food record.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 14),
+          if (image != null) ...<Widget>[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Image.file(
+                  image,
+                  fit: BoxFit.cover,
+                  errorBuilder:
+                      (
+                        BuildContext context,
+                        Object error,
+                        StackTrace? stackTrace,
+                      ) {
+                        return Container(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.broken_image_outlined,
+                            size: 40,
+                          ),
+                        );
+                      },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          OutlinedButton.icon(
+            onPressed: (_isSaving || _isPickingImage) ? null : _chooseImage,
+            icon: _isPickingImage
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    image == null
+                        ? Icons.add_a_photo_outlined
+                        : Icons.change_circle_outlined,
+                  ),
+            label: Text(
+              _isPickingImage
+                  ? 'Selecting photo...'
+                  : image == null
+                  ? 'Add food photo'
+                  : 'Change photo',
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveRecord() async {
@@ -133,23 +335,15 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final String organizationId = widget.organizationId.trim();
 
     if (organizationId.isEmpty) {
-      _showMessage(
-        'Organization information is missing.',
-        isError: true,
-      );
+      _showMessage('Organization information is missing.', isError: true);
       return;
     }
 
-    final int expectedPeople =
-        _parseIntOrZero(_expectedPeopleController.text);
-    final int actualPeople =
-        _parseIntOrZero(_actualPeopleController.text);
-    final int mealsPrepared =
-        _parseIntOrZero(_mealsPreparedController.text);
-    final int mealsConsumed =
-        _parseIntOrZero(_mealsConsumedController.text);
-    final double wasteKg =
-        _parseDoubleOrZero(_wasteKgController.text);
+    final int expectedPeople = _parseIntOrZero(_expectedPeopleController.text);
+    final int actualPeople = _parseIntOrZero(_actualPeopleController.text);
+    final int mealsPrepared = _parseIntOrZero(_mealsPreparedController.text);
+    final int mealsConsumed = _parseIntOrZero(_mealsConsumedController.text);
+    final double wasteKg = _parseDoubleOrZero(_wasteKgController.text);
 
     if (actualPeople > expectedPeople) {
       _showMessage(
@@ -186,20 +380,47 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       _isSaving = true;
     });
 
+    DailyFoodRecord? createdRecord;
+
     try {
-      await _repository.createRecord(record);
+      createdRecord = await _repository.createRecord(record);
+
+      final File? image = _selectedImage;
+
+      if (image != null) {
+        final CloudinaryUploadResult uploadResult = await _cloudinaryService
+            .uploadFoodRecordImage(
+              file: image,
+              organizationId: organizationId,
+              recordId: createdRecord.id,
+            );
+
+        await _repository.attachImage(
+          organizationId: organizationId,
+          recordId: createdRecord.id,
+          imageUrl: uploadResult.secureUrl,
+          imagePublicId: uploadResult.publicId,
+        );
+      }
 
       if (!mounted) {
         return;
       }
 
       _showMessage(
-        'Daily food record saved successfully.',
+        image == null
+            ? 'Daily food record saved successfully.'
+            : 'Food record and photo saved successfully.',
         isError: false,
       );
 
       _clearForm();
     } on FirebaseException catch (error) {
+      await _cleanupCreatedRecord(
+        organizationId: organizationId,
+        createdRecord: createdRecord,
+      );
+
       if (!mounted) {
         return;
       }
@@ -209,11 +430,26 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         '${error.code} ${error.message}',
       );
 
-      _showMessage(
-        _firebaseErrorMessage(error),
-        isError: true,
+      _showMessage(_firebaseErrorMessage(error), isError: true);
+    } on CloudinaryUploadException catch (error) {
+      await _cleanupCreatedRecord(
+        organizationId: organizationId,
+        createdRecord: createdRecord,
       );
+
+      if (!mounted) {
+        return;
+      }
+
+      debugPrint('Food record Cloudinary error: $error');
+
+      _showMessage(error.message, isError: true);
     } on ArgumentError catch (error) {
+      await _cleanupCreatedRecord(
+        organizationId: organizationId,
+        createdRecord: createdRecord,
+      );
+
       if (!mounted) {
         return;
       }
@@ -223,15 +459,22 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
         isError: true,
       );
     } on StateError catch (error) {
+      await _cleanupCreatedRecord(
+        organizationId: organizationId,
+        createdRecord: createdRecord,
+      );
+
       if (!mounted) {
         return;
       }
 
-      _showMessage(
-        error.message,
-        isError: true,
-      );
+      _showMessage(error.message, isError: true);
     } catch (error) {
+      await _cleanupCreatedRecord(
+        organizationId: organizationId,
+        createdRecord: createdRecord,
+      );
+
       if (!mounted) {
         return;
       }
@@ -239,7 +482,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       debugPrint('Daily food record error: $error');
 
       _showMessage(
-        'Unable to save the food record. Please try again.',
+        'Unable to save the food record and photo. Please try again.',
         isError: true,
       );
     } finally {
@@ -251,6 +494,24 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     }
   }
 
+  Future<void> _cleanupCreatedRecord({
+    required String organizationId,
+    required DailyFoodRecord? createdRecord,
+  }) async {
+    if (createdRecord == null || createdRecord.id.trim().isEmpty) {
+      return;
+    }
+
+    try {
+      await _repository.deleteRecord(
+        organizationId: organizationId,
+        recordId: createdRecord.id,
+      );
+    } catch (cleanupError) {
+      debugPrint('Food record cleanup error: $cleanupError');
+    }
+  }
+
   void _clearForm() {
     _menuController.clear();
     _expectedPeopleController.clear();
@@ -258,6 +519,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     _mealsPreparedController.clear();
     _mealsConsumedController.clear();
     _wasteKgController.clear();
+    _selectedImage = null;
 
     _formKey.currentState?.reset();
 
@@ -268,10 +530,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     });
   }
 
-  String? _requiredTextValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _requiredTextValidator(String? value, {required String label}) {
     if (value == null || value.trim().isEmpty) {
       return '$label is required.';
     }
@@ -279,10 +538,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     return null;
   }
 
-  String? _nonNegativeIntValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _nonNegativeIntValidator(String? value, {required String label}) {
     final String text = value?.trim() ?? '';
 
     if (text.isEmpty) {
@@ -298,10 +554,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     return null;
   }
 
-  String? _nonNegativeDoubleValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _nonNegativeDoubleValidator(String? value, {required String label}) {
     final String text = value?.trim() ?? '';
 
     if (text.isEmpty) {
@@ -339,19 +592,14 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
   }
 
   int get _previewRemainingMeals {
-    final int prepared =
-        _parseIntOrZero(_mealsPreparedController.text);
-    final int consumed =
-        _parseIntOrZero(_mealsConsumedController.text);
+    final int prepared = _parseIntOrZero(_mealsPreparedController.text);
+    final int consumed = _parseIntOrZero(_mealsConsumedController.text);
 
     final int remaining = prepared - consumed;
     return remaining < 0 ? 0 : remaining;
   }
 
-  void _showMessage(
-    String message, {
-    required bool isError,
-  }) {
+  void _showMessage(String message, {required bool isError}) {
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     ScaffoldMessenger.of(context)
@@ -365,17 +613,13 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
       );
   }
 
-  Widget _buildSectionTitle(
-    BuildContext context,
-    String title,
-  ) {
+  Widget _buildSectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -392,10 +636,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
           prefixIcon: Icon(Icons.calendar_today_outlined),
           suffixIcon: Icon(Icons.arrow_drop_down_rounded),
         ),
-        child: Text(
-          _formatDate(_recordDate),
-          style: theme.textTheme.bodyLarge,
-        ),
+        child: Text(_formatDate(_recordDate), style: theme.textTheme.bodyLarge),
       ),
     );
   }
@@ -428,9 +669,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Daily Food Record'),
-      ),
+      appBar: AppBar(title: const Text('Daily Food Record')),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -455,24 +694,18 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 24),
-                    _buildSectionTitle(
-                      context,
-                      'Meal information',
-                    ),
+                    _buildSectionTitle(context, 'Meal information'),
                     _buildDateField(),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: _selectedMealType,
                       decoration: const InputDecoration(
                         labelText: 'Meal type',
-                        prefixIcon: Icon(
-                          Icons.restaurant_menu_outlined,
-                        ),
+                        prefixIcon: Icon(Icons.restaurant_menu_outlined),
                       ),
                       items: _mealTypes
                           .map(
-                            (String mealType) =>
-                                DropdownMenuItem<String>(
+                            (String mealType) => DropdownMenuItem<String>(
                               value: mealType,
                               child: Text(mealType),
                             ),
@@ -500,30 +733,23 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Menu',
                         hintText: 'e.g. Rice, Dal, Paneer',
-                        prefixIcon: Icon(
-                          Icons.menu_book_outlined,
-                        ),
+                        prefixIcon: Icon(Icons.menu_book_outlined),
                         alignLabelWithHint: true,
                       ),
                       validator: (String? value) =>
-                          _requiredTextValidator(
-                        value,
-                        label: 'Menu',
-                      ),
+                          _requiredTextValidator(value, label: 'Menu'),
                     ),
                     const SizedBox(height: 24),
-                    _buildSectionTitle(
-                      context,
-                      'People and production',
-                    ),
+                    _buildImageSection(theme),
+                    const SizedBox(height: 24),
+                    _buildSectionTitle(context, 'People and production'),
                     _buildNumberField(
                       controller: _expectedPeopleController,
                       label: 'Expected people',
                       hint: 'e.g. 850',
                       icon: Icons.people_outline_rounded,
                       suffix: 'people',
-                      validator: (String? value) =>
-                          _nonNegativeIntValidator(
+                      validator: (String? value) => _nonNegativeIntValidator(
                         value,
                         label: 'Expected people',
                       ),
@@ -535,8 +761,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       hint: 'e.g. 820',
                       icon: Icons.groups_2_outlined,
                       suffix: 'people',
-                      validator: (String? value) =>
-                          _nonNegativeIntValidator(
+                      validator: (String? value) => _nonNegativeIntValidator(
                         value,
                         label: 'Actual people',
                       ),
@@ -548,8 +773,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       hint: 'e.g. 850',
                       icon: Icons.restaurant_outlined,
                       suffix: 'meals',
-                      validator: (String? value) =>
-                          _nonNegativeIntValidator(
+                      validator: (String? value) => _nonNegativeIntValidator(
                         value,
                         label: 'Meals prepared',
                       ),
@@ -561,8 +785,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       hint: 'e.g. 810',
                       icon: Icons.restaurant_rounded,
                       suffix: 'meals',
-                      validator: (String? value) =>
-                          _nonNegativeIntValidator(
+                      validator: (String? value) => _nonNegativeIntValidator(
                         value,
                         label: 'Meals consumed',
                       ),
@@ -574,8 +797,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                       hint: 'e.g. 8.5',
                       icon: Icons.delete_outline_rounded,
                       suffix: 'kg',
-                      validator: (String? value) =>
-                          _nonNegativeDoubleValidator(
+                      validator: (String? value) => _nonNegativeDoubleValidator(
                         value,
                         label: 'Food waste',
                       ),
@@ -598,8 +820,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                             child: Text(
                               'Meals remaining: $_previewRemainingMeals',
                               style: theme.textTheme.titleSmall?.copyWith(
-                                color:
-                                    theme.colorScheme.onSecondaryContainer,
+                                color: theme.colorScheme.onSecondaryContainer,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
@@ -645,8 +866,7 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                               'historical data. AI forecasting and surplus '
                               'redistribution will use this data in later phases.',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color:
-                                    theme.colorScheme.onPrimaryContainer,
+                                color: theme.colorScheme.onPrimaryContainer,
                               ),
                             ),
                           ),
@@ -657,20 +877,29 @@ class _DailyRecordScreenState extends State<DailyRecordScreen> {
                     ElevatedButton(
                       onPressed: _isSaving ? null : _saveRecord,
                       child: _isSaving
-                          ? const SizedBox(
-                              height: 22,
-                              width: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                              ),
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const SizedBox(
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _selectedImage == null
+                                      ? 'Saving...'
+                                      : 'Saving & uploading...',
+                                ),
+                              ],
                             )
                           : const Text('Save Daily Record'),
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton(
-                      onPressed: _isSaving
-                          ? null
-                          : () => context.pop(),
+                      onPressed: _isSaving ? null : () => context.pop(),
                       child: const Text('Cancel'),
                     ),
                   ],

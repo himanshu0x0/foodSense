@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:foodsense/core/network/foodsense_ai_api_client.dart' as api;
+
+import 'package:foodsense/core/network/foodsense_ai_api_client.dart';
 import 'package:foodsense/features/forecast/providers/forecast_provider.dart';
 
 /// Phase 2 waste-analysis dashboard.
@@ -10,10 +11,7 @@ import 'package:foodsense/features/forecast/providers/forecast_provider.dart';
 /// It intentionally does not calculate waste metrics locally; the backend is
 /// the source of truth.
 class WasteAnalysisScreen extends ConsumerStatefulWidget {
-  const WasteAnalysisScreen({
-    required this.organizationId,
-    super.key,
-  });
+  const WasteAnalysisScreen({required this.organizationId, super.key});
 
   final String organizationId;
 
@@ -22,8 +20,7 @@ class WasteAnalysisScreen extends ConsumerStatefulWidget {
       _WasteAnalysisScreenState();
 }
 
-class _WasteAnalysisScreenState
-    extends ConsumerState<WasteAnalysisScreen> {
+class _WasteAnalysisScreenState extends ConsumerState<WasteAnalysisScreen> {
   late DateTime _startDate;
   late DateTime _endDate;
   String? _mealType;
@@ -41,12 +38,25 @@ class _WasteAnalysisScreenState
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ThemeData theme = Theme.of(context);
+
+    if (widget.organizationId.trim().isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Waste Analysis')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Organization information is missing. Please open Waste Analysis from a valid organization.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Waste Analysis'),
-      ),
+      appBar: AppBar(title: const Text('Waste Analysis')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -129,22 +139,13 @@ class _WasteAnalysisScreenState
                   value: 'Breakfast',
                   child: Text('Breakfast'),
                 ),
-                DropdownMenuItem<String?>(
-                  value: 'Lunch',
-                  child: Text('Lunch'),
-                ),
+                DropdownMenuItem<String?>(value: 'Lunch', child: Text('Lunch')),
                 DropdownMenuItem<String?>(
                   value: 'Dinner',
                   child: Text('Dinner'),
                 ),
-                DropdownMenuItem<String?>(
-                  value: 'Snack',
-                  child: Text('Snack'),
-                ),
-                DropdownMenuItem<String?>(
-                  value: 'Other',
-                  child: Text('Other'),
-                ),
+                DropdownMenuItem<String?>(value: 'Snack', child: Text('Snack')),
+                DropdownMenuItem<String?>(value: 'Other', child: Text('Other')),
               ],
               onChanged: (String? value) {
                 setState(() {
@@ -216,8 +217,9 @@ class _WasteAnalysisScreenState
 
   Widget _buildAnalysisState(ThemeData theme) {
     final WasteAnalysisQuery query = _query!;
-    final AsyncValue<WasteAnalysisResult> analysis =
-        ref.watch(wasteAnalysisProvider(query));
+    final AsyncValue<WasteAnalysisResult> analysis = ref.watch(
+      wasteAnalysisProvider(query),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -242,9 +244,7 @@ class _WasteAnalysisScreenState
               theme,
               title: 'Waste analysis failed',
               error: error,
-              onRetry: () => ref.invalidate(
-                wasteAnalysisProvider(query),
-              ),
+              onRetry: () => ref.invalidate(wasteAnalysisProvider(query)),
             );
           },
           data: (WasteAnalysisResult result) {
@@ -252,16 +252,12 @@ class _WasteAnalysisScreenState
           },
         ),
         const SizedBox(height: 12),
-        if (_trendQuery != null)
-          _buildTrendSection(theme, _trendQuery!),
+        if (_trendQuery != null) _buildTrendSection(theme, _trendQuery!),
       ],
     );
   }
 
-  Widget _buildAnalysisResult(
-    ThemeData theme,
-    WasteAnalysisResult result,
-  ) {
+  Widget _buildAnalysisResult(ThemeData theme, WasteAnalysisResult result) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -290,10 +286,7 @@ class _WasteAnalysisScreenState
     );
   }
 
-  Widget _buildMetricGrid(
-    ThemeData theme,
-    WasteAnalysisResult result,
-  ) {
+  Widget _buildMetricGrid(ThemeData theme, WasteAnalysisResult result) {
     return Column(
       children: <Widget>[
         _MetricTile(
@@ -348,10 +341,7 @@ class _WasteAnalysisScreenState
     );
   }
 
-  Widget _buildInsightCard(
-    ThemeData theme,
-    WasteAnalysisResult result,
-  ) {
+  Widget _buildInsightCard(ThemeData theme, WasteAnalysisResult result) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -407,33 +397,29 @@ class _WasteAnalysisScreenState
               ),
             ),
             const SizedBox(height: 10),
-            ...result.recommendations.map(
-              (String recommendation) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const Icon(Icons.check_circle_outline, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(recommendation)),
-                    ],
-                  ),
-                );
-              },
-            ),
+            ...result.recommendations.map((String recommendation) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Icon(Icons.check_circle_outline, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(recommendation)),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTrendSection(
-    ThemeData theme,
-    WasteTrendQuery query,
-  ) {
-    final AsyncValue<WasteTrendResult> trendAsync =
-        ref.watch(wasteTrendProvider(query));
+  Widget _buildTrendSection(ThemeData theme, WasteTrendQuery query) {
+    final AsyncValue<WasteTrendResult> trendAsync = ref.watch(
+      wasteTrendProvider(query),
+    );
 
     return trendAsync.when(
       loading: () => const Card(
@@ -455,9 +441,7 @@ class _WasteAnalysisScreenState
           theme,
           title: 'Trend analysis failed',
           error: error,
-          onRetry: () => ref.invalidate(
-            wasteTrendProvider(query),
-          ),
+          onRetry: () => ref.invalidate(wasteTrendProvider(query)),
         );
       },
       data: (WasteTrendResult result) {
@@ -466,10 +450,7 @@ class _WasteAnalysisScreenState
     );
   }
 
-  Widget _buildTrendResult(
-    ThemeData theme,
-    WasteTrendResult result,
-  ) {
+  Widget _buildTrendResult(ThemeData theme, WasteTrendResult result) {
     if (result.dailyMetrics.isEmpty) {
       return Card(
         child: Padding(
@@ -516,62 +497,62 @@ class _WasteAnalysisScreenState
             if (maxWaste <= 0)
               const SizedBox(
                 height: 100,
-                child: Center(
-                  child: Text('No recorded waste in this period.'),
-                ),
+                child: Center(child: Text('No recorded waste in this period.')),
               )
             else
-              ...result.dailyMetrics.reversed.take(14).map(
-                    (WasteDailyMetric metric) {
-                  final double fraction =
-                      (metric.wasteKg / maxWaste).clamp(0.0, 1.0);
+              ...result.dailyMetrics.reversed.take(14).map((
+                WasteDailyMetric metric,
+              ) {
+                final double fraction = (metric.wasteKg / maxWaste).clamp(
+                  0.0,
+                  1.0,
+                );
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Row(
-                          children: <Widget>[
-                            SizedBox(
-                              width: 88,
-                              child: Text(
-                                _formatDate(metric.recordDate),
-                                style: theme.textTheme.bodySmall,
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          SizedBox(
+                            width: 88,
+                            child: Text(
+                              _formatDate(metric.recordDate),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: LinearProgressIndicator(
+                                minHeight: 10,
+                                value: fraction,
                               ),
                             ),
-                            Expanded(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: LinearProgressIndicator(
-                                  minHeight: 10,
-                                  value: fraction,
-                                ),
-                              ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 62,
+                            child: Text(
+                              '${metric.wasteKg.toStringAsFixed(1)} kg',
+                              textAlign: TextAlign.end,
+                              style: theme.textTheme.bodySmall,
                             ),
-                            const SizedBox(width: 10),
-                            SizedBox(
-                              width: 62,
-                              child: Text(
-                                '${metric.wasteKg.toStringAsFixed(1)} kg',
-                                textAlign: TextAlign.end,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Prepared ${metric.mealsPrepared} • '
-                          'Consumed ${metric.mealsConsumed} • '
-                          'Remaining ${metric.mealsRemaining}',
-                          style: theme.textTheme.labelSmall,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Prepared ${metric.mealsPrepared} • '
+                        'Consumed ${metric.mealsConsumed} • '
+                        'Remaining ${metric.mealsRemaining}',
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ],
+                  ),
+                );
+              }),
           ],
         ),
       ),
@@ -590,11 +571,7 @@ class _WasteAnalysisScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Icon(
-              Icons.error_outline,
-              size: 40,
-              color: theme.colorScheme.error,
-            ),
+            Icon(Icons.error_outline, size: 40, color: theme.colorScheme.error),
             const SizedBox(height: 10),
             Text(
               title,
@@ -617,9 +594,7 @@ class _WasteAnalysisScreenState
     );
   }
 
-  Future<void> _pickDate({
-    required bool isStart,
-  }) async {
+  Future<void> _pickDate({required bool isStart}) async {
     final DateTime initial = isStart ? _startDate : _endDate;
 
     final DateTime? selected = await showDatePicker(
@@ -656,8 +631,15 @@ class _WasteAnalysisScreenState
       return;
     }
 
+    final String organizationId = widget.organizationId.trim();
+
+    if (organizationId.isEmpty) {
+      _showMessage('Organization information is missing.');
+      return;
+    }
+
     final WasteAnalysisQuery query = WasteAnalysisQuery(
-      organizationId: widget.organizationId,
+      organizationId: organizationId,
       startDate: _startDate,
       endDate: _endDate,
       mealType: _mealType,
@@ -666,7 +648,7 @@ class _WasteAnalysisScreenState
     setState(() {
       _query = query;
       _trendQuery = WasteTrendQuery(
-        organizationId: widget.organizationId,
+        organizationId: organizationId,
         startDate: _startDate,
         endDate: _endDate,
         mealType: _mealType,
@@ -677,13 +659,11 @@ class _WasteAnalysisScreenState
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _friendlyError(Object error) {
-    if (error is api.FoodSenseApiException) {
+    if (error is FoodSenseApiException) {
       return error.message;
     }
 
@@ -708,10 +688,7 @@ class _WasteAnalysisScreenState
         .replaceAll('_', ' ')
         .split(' ')
         .where((String part) => part.isNotEmpty)
-        .map(
-          (String part) =>
-              '${part[0].toUpperCase()}${part.substring(1)}',
-        )
+        .map((String part) => '${part[0].toUpperCase()}${part.substring(1)}')
         .join(' ');
   }
 }
@@ -760,9 +737,7 @@ class WasteAnalysisQuery {
     final a = left.toLocal();
     final b = right.toLocal();
 
-    return a.year == b.year &&
-        a.month == b.month &&
-        a.day == b.day;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 }
 
@@ -793,53 +768,36 @@ class WasteTrendQuery {
   }
 
   @override
-  int get hashCode => Object.hash(
-        organizationId,
-        startDate,
-        endDate,
-        mealType,
-      );
+  int get hashCode => Object.hash(organizationId, startDate, endDate, mealType);
 }
 
 final wasteAnalysisProvider = FutureProvider.autoDispose
-    .family<WasteAnalysisResult, WasteAnalysisQuery>(
-  (ref, query) async {
-    final client = ref.watch(
-      foodSenseAiApiClientProvider,
-    );
+    .family<WasteAnalysisResult, WasteAnalysisQuery>((ref, query) async {
+      final client = ref.watch(foodSenseAiApiClientProvider);
 
-    final response = await client.waste(
-      <String, dynamic>{
+      final response = await client.waste(<String, dynamic>{
         'organization_id': query.organizationId,
         'start_date': _dateOnlyString(query.startDate),
         'end_date': _dateOnlyString(query.endDate),
         if (query.mealType != null) 'meal_type': query.mealType,
-      },
-    );
+      });
 
-    return WasteAnalysisResult.fromMap(response);
-  },
-);
+      return WasteAnalysisResult.fromMap(response);
+    });
 
 final wasteTrendProvider = FutureProvider.autoDispose
-    .family<WasteTrendResult, WasteTrendQuery>(
-  (ref, query) async {
-    final client = ref.watch(
-      foodSenseAiApiClientProvider,
-    );
+    .family<WasteTrendResult, WasteTrendQuery>((ref, query) async {
+      final client = ref.watch(foodSenseAiApiClientProvider);
 
-    final response = await client.wasteTrend(
-      <String, dynamic>{
+      final response = await client.wasteTrend(<String, dynamic>{
         'organization_id': query.organizationId,
         'start_date': _dateOnlyString(query.startDate),
         'end_date': _dateOnlyString(query.endDate),
         if (query.mealType != null) 'meal_type': query.mealType,
-      },
-    );
+      });
 
-    return WasteTrendResult.fromMap(response);
-  },
-);
+      return WasteTrendResult.fromMap(response);
+    });
 
 class WasteAnalysisResult {
   const WasteAnalysisResult({
@@ -884,9 +842,7 @@ class WasteAnalysisResult {
   final String method;
   final DateTime generatedAt;
 
-  factory WasteAnalysisResult.fromMap(
-    Map<String, dynamic> map,
-  ) {
+  factory WasteAnalysisResult.fromMap(Map<String, dynamic> map) {
     return WasteAnalysisResult(
       organizationId: _stringField(map, 'organization_id'),
       startDate: _dateField(map, 'start_date'),
@@ -899,24 +855,17 @@ class WasteAnalysisResult {
       totalMealsConsumed: _intField(map, 'total_meals_consumed'),
       totalMealsRemaining: _intField(map, 'total_meals_remaining'),
       totalWasteKg: _doubleField(map, 'total_waste_kg'),
-      averageDailyWasteKg:
-          _doubleField(map, 'average_daily_waste_kg'),
-      wasteRatePercent:
-          _doubleField(map, 'waste_rate_percent'),
-      surplusRatePercent:
-          _doubleField(map, 'surplus_rate_percent'),
-      excessProductionMeals:
-          _intField(map, 'excess_production_meals'),
+      averageDailyWasteKg: _doubleField(map, 'average_daily_waste_kg'),
+      wasteRatePercent: _doubleField(map, 'waste_rate_percent'),
+      surplusRatePercent: _doubleField(map, 'surplus_rate_percent'),
+      excessProductionMeals: _intField(map, 'excess_production_meals'),
       averageWastePerRemainingMealKg: _doubleField(
         map,
         'average_waste_per_remaining_meal_kg',
       ),
       trend: _stringField(map, 'trend'),
       insight: _stringField(map, 'insight'),
-      recommendations: _stringListField(
-        map,
-        'recommendations',
-      ),
+      recommendations: _stringListField(map, 'recommendations'),
       method: _stringField(map, 'method'),
       generatedAt: _timestampField(map, 'generated_at'),
     );
@@ -942,16 +891,14 @@ class WasteTrendResult {
   final List<WasteDailyMetric> dailyMetrics;
   final DateTime generatedAt;
 
-  factory WasteTrendResult.fromMap(
-    Map<String, dynamic> map,
-  ) {
+  factory WasteTrendResult.fromMap(Map<String, dynamic> map) {
     final dynamic rawMetrics = map['daily_metrics'];
 
     final List<WasteDailyMetric> metrics = rawMetrics is List
         ? rawMetrics
-            .whereType<Map<String, dynamic>>()
-            .map(WasteDailyMetric.fromMap)
-            .toList(growable: false)
+              .whereType<Map<String, dynamic>>()
+              .map(WasteDailyMetric.fromMap)
+              .toList(growable: false)
         : const <WasteDailyMetric>[];
 
     return WasteTrendResult(
@@ -987,19 +934,15 @@ class WasteDailyMetric {
   final double wasteRatePercent;
   final double surplusRatePercent;
 
-  factory WasteDailyMetric.fromMap(
-    Map<String, dynamic> map,
-  ) {
+  factory WasteDailyMetric.fromMap(Map<String, dynamic> map) {
     return WasteDailyMetric(
       recordDate: _dateField(map, 'record_date'),
       mealsPrepared: _intField(map, 'meals_prepared'),
       mealsConsumed: _intField(map, 'meals_consumed'),
       mealsRemaining: _intField(map, 'meals_remaining'),
       wasteKg: _doubleField(map, 'waste_kg'),
-      wasteRatePercent:
-          _doubleField(map, 'waste_rate_percent'),
-      surplusRatePercent:
-          _doubleField(map, 'surplus_rate_percent'),
+      wasteRatePercent: _doubleField(map, 'waste_rate_percent'),
+      surplusRatePercent: _doubleField(map, 'surplus_rate_percent'),
     );
   }
 }
@@ -1046,10 +989,7 @@ class _MetricTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Text(
-            unit,
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(unit, style: theme.textTheme.bodySmall),
         ],
       ),
     );
@@ -1057,10 +997,7 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-  });
+  const _DetailRow({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -1076,9 +1013,8 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               value,
               textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -1088,9 +1024,7 @@ class _DetailRow extends StatelessWidget {
 }
 
 class _TrendChip extends StatelessWidget {
-  const _TrendChip({
-    required this.trend,
-  });
+  const _TrendChip({required this.trend});
 
   final String trend;
 
@@ -1114,9 +1048,7 @@ class _TrendChip extends StatelessWidget {
 
     return Chip(
       avatar: Icon(icon, size: 16),
-      label: Text(
-        trend.replaceAll('_', ' ').toUpperCase(),
-      ),
+      label: Text(trend.replaceAll('_', ' ').toUpperCase()),
       visualDensity: VisualDensity.compact,
     );
   }
@@ -1130,25 +1062,17 @@ String _dateOnlyString(DateTime value) {
   return '${local.year}-$month-$day';
 }
 
-String _stringField(
-  Map<String, dynamic> map,
-  String field,
-) {
+String _stringField(Map<String, dynamic> map, String field) {
   final dynamic value = map[field];
 
   if (value is String && value.trim().isNotEmpty) {
     return value.trim();
   }
 
-  throw FormatException(
-    'Waste field "$field" must be a non-empty string.',
-  );
+  throw FormatException('Waste field "$field" must be a non-empty string.');
 }
 
-int _intField(
-  Map<String, dynamic> map,
-  String field,
-) {
+int _intField(Map<String, dynamic> map, String field) {
   final dynamic value = map[field];
 
   if (value is int) {
@@ -1166,15 +1090,10 @@ int _intField(
     }
   }
 
-  throw FormatException(
-    'Waste field "$field" must be an integer.',
-  );
+  throw FormatException('Waste field "$field" must be an integer.');
 }
 
-double _doubleField(
-  Map<String, dynamic> map,
-  String field,
-) {
+double _doubleField(Map<String, dynamic> map, String field) {
   final dynamic value = map[field];
 
   if (value is num) {
@@ -1188,15 +1107,10 @@ double _doubleField(
     }
   }
 
-  throw FormatException(
-    'Waste field "$field" must be a number.',
-  );
+  throw FormatException('Waste field "$field" must be a number.');
 }
 
-DateTime _dateField(
-  Map<String, dynamic> map,
-  String field,
-) {
+DateTime _dateField(Map<String, dynamic> map, String field) {
   final dynamic value = map[field];
 
   if (value is String) {
@@ -1207,15 +1121,10 @@ DateTime _dateField(
     }
   }
 
-  throw FormatException(
-    'Waste field "$field" must be a valid date.',
-  );
+  throw FormatException('Waste field "$field" must be a valid date.');
 }
 
-DateTime _timestampField(
-  Map<String, dynamic> map,
-  String field,
-) {
+DateTime _timestampField(Map<String, dynamic> map, String field) {
   final dynamic value = map[field];
 
   if (value is String) {
@@ -1226,22 +1135,15 @@ DateTime _timestampField(
     }
   }
 
-  throw FormatException(
-    'Waste field "$field" must be a valid timestamp.',
-  );
+  throw FormatException('Waste field "$field" must be a valid timestamp.');
 }
 
-List<String> _stringListField(
-  Map<String, dynamic> map,
-  String field,
-) {
+List<String> _stringListField(Map<String, dynamic> map, String field) {
   final dynamic value = map[field];
 
   if (value is List) {
     return value.whereType<String>().toList(growable: false);
   }
 
-  throw FormatException(
-    'Waste field "$field" must be a list of strings.',
-  );
+  throw FormatException('Waste field "$field" must be a list of strings.');
 }

@@ -8,14 +8,16 @@ import '../models/daily_food_record.dart';
 /// Firestore structure:
 /// organizations/{organizationId}/food_records/{recordId}
 ///
+/// Media structure:
+/// - Image binary/file: Cloudinary
+/// - imageUrl + imagePublicId: Firestore food record document
+///
 /// The repository keeps Firestore-specific logic outside presentation screens.
 /// Firestore security rules remain the final authority for authorization.
 class FoodRecordRepository {
-  FoodRecordRepository({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? auth,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  FoodRecordRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
@@ -42,9 +44,7 @@ class FoodRecordRepository {
     return _firestore.collection('organizations').doc(id);
   }
 
-  CollectionReference<Map<String, dynamic>> _recordsRef(
-    String organizationId,
-  ) {
+  CollectionReference<Map<String, dynamic>> _recordsRef(String organizationId) {
     return _organizationRef(organizationId).collection('food_records');
   }
 
@@ -83,9 +83,7 @@ class FoodRecordRepository {
     final bool allowed = await isOrganizationMember(organizationId);
 
     if (!allowed) {
-      throw StateError(
-        'You do not have access to this organization.',
-      );
+      throw StateError('You do not have access to this organization.');
     }
   }
 
@@ -93,9 +91,7 @@ class FoodRecordRepository {
   ///
   /// Owners do not need a membership document, so owners receive a synthetic
   /// membership map with role = owner.
-  Future<Map<String, dynamic>?> getMyMembership(
-    String organizationId,
-  ) async {
+  Future<Map<String, dynamic>?> getMyMembership(String organizationId) async {
     final User user = _currentUser;
     final DocumentReference<Map<String, dynamic>> organization =
         _organizationRef(organizationId);
@@ -113,10 +109,7 @@ class FoodRecordRepository {
     final String ownerId = organizationData['ownerId'] as String? ?? '';
 
     if (ownerId == user.uid) {
-      return <String, dynamic>{
-        'userId': user.uid,
-        'role': 'owner',
-      };
+      return <String, dynamic>{'userId': user.uid, 'role': 'owner'};
     }
 
     final DocumentSnapshot<Map<String, dynamic>> memberSnapshot =
@@ -126,10 +119,7 @@ class FoodRecordRepository {
       return null;
     }
 
-    return <String, dynamic>{
-      'userId': user.uid,
-      ...?memberSnapshot.data(),
-    };
+    return <String, dynamic>{'userId': user.uid, ...?memberSnapshot.data()};
   }
 
   /// Creates a new daily food record.
@@ -147,17 +137,16 @@ class FoodRecordRepository {
 
     _validateRecord(record);
 
-    final CollectionReference<Map<String, dynamic>> collection =
-        _recordsRef(record.organizationId);
+    final CollectionReference<Map<String, dynamic>> collection = _recordsRef(
+      record.organizationId,
+    );
 
     final DocumentReference<Map<String, dynamic>> document =
         record.id.trim().isEmpty
-            ? collection.doc()
-            : collection.doc(record.id.trim());
+        ? collection.doc()
+        : collection.doc(record.id.trim());
 
-    final Map<String, dynamic> data = record.toMap(
-      includeMetadata: false,
-    );
+    final Map<String, dynamic> data = record.toMap(includeMetadata: false);
 
     data['createdBy'] = user.uid;
     data['createdAt'] = FieldValue.serverTimestamp();
@@ -166,10 +155,138 @@ class FoodRecordRepository {
 
     await document.set(data);
 
-    final DocumentSnapshot<Map<String, dynamic>> saved =
-        await document.get();
+    final DocumentSnapshot<Map<String, dynamic>> saved = await document.get();
 
     return DailyFoodRecord.fromDocument(saved);
+  }
+
+  /// Attaches a Cloudinary image to an existing food record.
+  ///
+  /// Only the record creator or an organization owner/manager can attach or
+  /// replace media. This method stores Cloudinary metadata only; the actual
+  /// image file remains in Cloudinary.
+  Future<DailyFoodRecord> attachImage({
+    required String organizationId,
+    required String recordId,
+    required String imageUrl,
+    required String imagePublicId,
+  }) async {
+    final User user = _currentUser;
+    final String organization = organizationId.trim();
+    final String id = recordId.trim();
+    final String url = imageUrl.trim();
+    final String publicId = imagePublicId.trim();
+
+    if (organization.isEmpty) {
+      throw ArgumentError('Organization ID cannot be empty.');
+    }
+
+    if (id.isEmpty) {
+      throw ArgumentError('Record ID cannot be empty.');
+    }
+
+    if (url.isEmpty) {
+      throw ArgumentError('Image URL cannot be empty.');
+    }
+
+    if (publicId.isEmpty) {
+      throw ArgumentError('Image public ID cannot be empty.');
+    }
+
+    await _requireOrganizationAccess(organization);
+
+    final DocumentReference<Map<String, dynamic>> document = _recordsRef(
+      organization,
+    ).doc(id);
+
+    final DocumentSnapshot<Map<String, dynamic>> existing = await document
+        .get();
+
+    if (!existing.exists) {
+      throw StateError('The food record no longer exists.');
+    }
+
+    final Map<String, dynamic> existingData =
+        existing.data() ?? <String, dynamic>{};
+
+    final String existingOrganizationId =
+        existingData['organizationId'] as String? ?? '';
+
+    if (existingOrganizationId != organization) {
+      throw StateError('The food record does not belong to this organization.');
+    }
+
+    await _requireRecordWriteAccess(
+      organizationId: organization,
+      existingData: existingData,
+      userId: user.uid,
+    );
+
+    await document.update(<String, dynamic>{
+      'imageUrl': url,
+      'imagePublicId': publicId,
+      'updatedBy': user.uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    final DocumentSnapshot<Map<String, dynamic>> updated = await document.get();
+
+    return DailyFoodRecord.fromDocument(updated);
+  }
+
+  /// Removes the Cloudinary media references from a food record.
+  ///
+  /// This does not delete the Cloudinary asset itself. The caller should
+  /// delete the Cloudinary asset first (using its public ID) and then call
+  /// this method to remove the Firestore references.
+  Future<DailyFoodRecord> clearImage({
+    required String organizationId,
+    required String recordId,
+  }) async {
+    final User user = _currentUser;
+    final String organization = organizationId.trim();
+    final String id = recordId.trim();
+
+    if (organization.isEmpty) {
+      throw ArgumentError('Organization ID cannot be empty.');
+    }
+
+    if (id.isEmpty) {
+      throw ArgumentError('Record ID cannot be empty.');
+    }
+
+    await _requireOrganizationAccess(organization);
+
+    final DocumentReference<Map<String, dynamic>> document = _recordsRef(
+      organization,
+    ).doc(id);
+
+    final DocumentSnapshot<Map<String, dynamic>> existing = await document
+        .get();
+
+    if (!existing.exists) {
+      throw StateError('The food record no longer exists.');
+    }
+
+    final Map<String, dynamic> existingData =
+        existing.data() ?? <String, dynamic>{};
+
+    await _requireRecordWriteAccess(
+      organizationId: organization,
+      existingData: existingData,
+      userId: user.uid,
+    );
+
+    await document.update(<String, dynamic>{
+      'imageUrl': FieldValue.delete(),
+      'imagePublicId': FieldValue.delete(),
+      'updatedBy': user.uid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    final DocumentSnapshot<Map<String, dynamic>> updated = await document.get();
+
+    return DailyFoodRecord.fromDocument(updated);
   }
 
   /// Gets one food record by document ID.
@@ -185,8 +302,9 @@ class FoodRecordRepository {
       throw ArgumentError('Record ID cannot be empty.');
     }
 
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
-        await _recordsRef(organizationId).doc(id).get();
+    final DocumentSnapshot<Map<String, dynamic>> snapshot = await _recordsRef(
+      organizationId,
+    ).doc(id).get();
 
     if (!snapshot.exists) {
       return null;
@@ -200,25 +318,21 @@ class FoodRecordRepository {
   }
 
   /// Watches all food records for an organization in newest-first order.
-  Stream<List<DailyFoodRecord>> watchRecords(
-    String organizationId,
-  ) async* {
+  Stream<List<DailyFoodRecord>> watchRecords(String organizationId) async* {
     await _requireOrganizationAccess(organizationId);
 
     yield* _recordsRef(organizationId)
         .orderBy('recordDate', descending: true)
         .snapshots()
-        .map(
-          (QuerySnapshot<Map<String, dynamic>> snapshot) {
-            return snapshot.docs
-                .map(DailyFoodRecord.fromDocument)
-                .where(
-                  (DailyFoodRecord record) =>
-                      record.organizationId == organizationId,
-                )
-                .toList();
-          },
-        );
+        .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
+          return snapshot.docs
+              .map(DailyFoodRecord.fromDocument)
+              .where(
+                (DailyFoodRecord record) =>
+                    record.organizationId == organizationId,
+              )
+              .toList();
+        });
   }
 
   /// Watches records for a particular calendar date.
@@ -233,27 +347,19 @@ class FoodRecordRepository {
     final DateTime end = start.add(const Duration(days: 1));
 
     return _recordsRef(organizationId)
-        .where(
-          'recordDate',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
-        )
-        .where(
-          'recordDate',
-          isLessThan: Timestamp.fromDate(end),
-        )
+        .where('recordDate', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('recordDate', isLessThan: Timestamp.fromDate(end))
         .orderBy('recordDate', descending: true)
         .snapshots()
-        .map(
-          (QuerySnapshot<Map<String, dynamic>> snapshot) {
-            return snapshot.docs
-                .map(DailyFoodRecord.fromDocument)
-                .where(
-                  (DailyFoodRecord record) =>
-                      record.organizationId == organizationId,
-                )
-                .toList();
-          },
-        );
+        .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
+          return snapshot.docs
+              .map(DailyFoodRecord.fromDocument)
+              .where(
+                (DailyFoodRecord record) =>
+                    record.organizationId == organizationId,
+              )
+              .toList();
+        });
   }
 
   /// Gets one page of records.
@@ -283,15 +389,13 @@ class FoodRecordRepository {
     final List<DailyFoodRecord> records = snapshot.docs
         .map(DailyFoodRecord.fromDocument)
         .where(
-          (DailyFoodRecord record) =>
-              record.organizationId == organizationId,
+          (DailyFoodRecord record) => record.organizationId == organizationId,
         )
         .toList();
 
     return FoodRecordPage(
       records: records,
-      lastDocument:
-          snapshot.docs.isEmpty ? null : snapshot.docs.last,
+      lastDocument: snapshot.docs.isEmpty ? null : snapshot.docs.last,
       hasMore: snapshot.docs.length == limit,
     );
   }
@@ -310,11 +414,12 @@ class FoodRecordRepository {
     await _requireOrganizationAccess(record.organizationId);
     _validateRecord(record);
 
-    final DocumentReference<Map<String, dynamic>> document =
-        _recordsRef(record.organizationId).doc(record.id.trim());
+    final DocumentReference<Map<String, dynamic>> document = _recordsRef(
+      record.organizationId,
+    ).doc(record.id.trim());
 
-    final DocumentSnapshot<Map<String, dynamic>> existing =
-        await document.get();
+    final DocumentSnapshot<Map<String, dynamic>> existing = await document
+        .get();
 
     if (!existing.exists) {
       throw StateError('The food record no longer exists.');
@@ -327,27 +432,16 @@ class FoodRecordRepository {
         existingData['organizationId'] as String? ?? '';
 
     if (existingOrganizationId != record.organizationId) {
-      throw StateError(
-        'The record does not belong to this organization.',
-      );
+      throw StateError('The record does not belong to this organization.');
     }
 
-    final String createdBy = existingData['createdBy'] as String? ?? '';
-
-    final bool ownerOrManager =
-        await _isOwnerOrManager(record.organizationId, user.uid);
-
-    if (createdBy.isNotEmpty &&
-        createdBy != user.uid &&
-        !ownerOrManager) {
-      throw StateError(
-        'Only the record creator or an organization manager can update it.',
-      );
-    }
-
-    final Map<String, dynamic> data = record.toMap(
-      includeMetadata: false,
+    await _requireRecordWriteAccess(
+      organizationId: record.organizationId,
+      existingData: existingData,
+      userId: user.uid,
     );
+
+    final Map<String, dynamic> data = record.toMap(includeMetadata: false);
 
     data.remove('createdBy');
     data.remove('createdAt');
@@ -357,8 +451,7 @@ class FoodRecordRepository {
 
     await document.update(data);
 
-    final DocumentSnapshot<Map<String, dynamic>> updated =
-        await document.get();
+    final DocumentSnapshot<Map<String, dynamic>> updated = await document.get();
 
     return DailyFoodRecord.fromDocument(updated);
   }
@@ -381,48 +474,61 @@ class FoodRecordRepository {
       throw ArgumentError('Record ID cannot be empty.');
     }
 
-    final DocumentReference<Map<String, dynamic>> document =
-        _recordsRef(organizationId).doc(id);
+    final DocumentReference<Map<String, dynamic>> document = _recordsRef(
+      organizationId,
+    ).doc(id);
 
-    final DocumentSnapshot<Map<String, dynamic>> existing =
-        await document.get();
+    final DocumentSnapshot<Map<String, dynamic>> existing = await document
+        .get();
 
     if (!existing.exists) {
       return;
     }
 
-    final Map<String, dynamic> data =
-        existing.data() ?? <String, dynamic>{};
+    final Map<String, dynamic> data = existing.data() ?? <String, dynamic>{};
 
     final String existingOrganizationId =
         data['organizationId'] as String? ?? '';
 
     if (existingOrganizationId != organizationId) {
-      throw StateError(
-        'The record does not belong to this organization.',
-      );
+      throw StateError('The record does not belong to this organization.');
     }
 
-    final String createdBy = data['createdBy'] as String? ?? '';
-    final bool ownerOrManager =
-        await _isOwnerOrManager(organizationId, user.uid);
-
-    if (createdBy.isNotEmpty &&
-        createdBy != user.uid &&
-        !ownerOrManager) {
-      throw StateError(
-        'Only the record creator or an organization manager can delete it.',
-      );
-    }
+    await _requireRecordWriteAccess(
+      organizationId: organizationId,
+      existingData: data,
+      userId: user.uid,
+    );
 
     await document.delete();
   }
 
+  /// Verifies that the current user may modify an existing record.
+  ///
+  /// Record creators may modify their own records. Owners, admins and
+  /// managers may modify organization records.
+  Future<void> _requireRecordWriteAccess({
+    required String organizationId,
+    required Map<String, dynamic> existingData,
+    required String userId,
+  }) async {
+    final String createdBy = existingData['createdBy'] as String? ?? '';
+
+    if (createdBy == userId) {
+      return;
+    }
+
+    final bool ownerOrManager = await _isOwnerOrManager(organizationId, userId);
+
+    if (!ownerOrManager) {
+      throw StateError(
+        'Only the record creator or an organization manager can modify this record.',
+      );
+    }
+  }
+
   /// Returns whether the signed-in user owns or manages the organization.
-  Future<bool> _isOwnerOrManager(
-    String organizationId,
-    String userId,
-  ) async {
+  Future<bool> _isOwnerOrManager(String organizationId, String userId) async {
     final DocumentSnapshot<Map<String, dynamic>> organizationSnapshot =
         await _organizationRef(organizationId).get();
 
@@ -449,20 +555,15 @@ class FoodRecordRepository {
       return false;
     }
 
-    final String role =
-        (memberSnapshot.data()?['role'] as String? ?? '').toLowerCase();
+    final String role = (memberSnapshot.data()?['role'] as String? ?? '')
+        .toLowerCase();
 
     return role == 'manager' || role == 'admin';
   }
 
-  void _ensureOrganizationMatch(
-    DailyFoodRecord record,
-    String organizationId,
-  ) {
+  void _ensureOrganizationMatch(DailyFoodRecord record, String organizationId) {
     if (record.organizationId != organizationId) {
-      throw StateError(
-        'The food record belongs to a different organization.',
-      );
+      throw StateError('The food record belongs to a different organization.');
     }
   }
 
@@ -484,9 +585,7 @@ class FoodRecordRepository {
     }
 
     if (record.actualPeople > record.expectedPeople) {
-      throw ArgumentError(
-        'Actual people cannot exceed expected people.',
-      );
+      throw ArgumentError('Actual people cannot exceed expected people.');
     }
 
     if (record.mealsPrepared < 0) {
@@ -498,17 +597,14 @@ class FoodRecordRepository {
     }
 
     if (record.mealsConsumed > record.mealsPrepared) {
-      throw ArgumentError(
-        'Meals consumed cannot exceed meals prepared.',
-      );
+      throw ArgumentError('Meals consumed cannot exceed meals prepared.');
     }
 
     if (record.wasteKg < 0) {
       throw ArgumentError('Food waste cannot be negative.');
     }
 
-    final int expectedRemaining =
-        record.mealsPrepared - record.mealsConsumed;
+    final int expectedRemaining = record.mealsPrepared - record.mealsConsumed;
 
     if (record.mealsRemaining != expectedRemaining) {
       throw ArgumentError(
@@ -518,11 +614,7 @@ class FoodRecordRepository {
   }
 
   DateTime _dateOnly(DateTime value) {
-    return DateTime(
-      value.year,
-      value.month,
-      value.day,
-    );
+    return DateTime(value.year, value.month, value.day);
   }
 }
 

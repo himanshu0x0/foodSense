@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../../../core/network/cloudinary_upload_service.dart';
 import '../data/food_record_repository.dart';
 import '../models/daily_food_record.dart';
 
@@ -27,17 +31,28 @@ class EditDailyRecordScreen extends StatefulWidget {
   State<EditDailyRecordScreen> createState() => _EditDailyRecordScreenState();
 }
 
+/// FastAPI URL used for the authenticated Cloudinary signing endpoint.
+///
+/// Override for an Android emulator with:
+/// --dart-define=FOODSENSE_API_BASE_URL=http://10.0.2.2:8000
+const String foodSenseApiBaseUrl = String.fromEnvironment(
+  'FOODSENSE_API_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8000',
+);
+
 class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   final FoodRecordRepository _repository = FoodRecordRepository();
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  final ImagePicker _imagePicker = ImagePicker();
+  late final CloudinaryUploadService _cloudinaryService;
+
   final TextEditingController _menuController = TextEditingController();
   final TextEditingController _expectedPeopleController =
       TextEditingController();
-  final TextEditingController _actualPeopleController =
-      TextEditingController();
+  final TextEditingController _actualPeopleController = TextEditingController();
   final TextEditingController _mealsPreparedController =
       TextEditingController();
   final TextEditingController _mealsConsumedController =
@@ -60,11 +75,19 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
   bool _isLoadingRecord = true;
   bool _isSaving = false;
 
+  File? _selectedImage;
+  bool _isPickingImage = false;
+  bool _removeExistingImage = false;
+
   String? _loadError;
 
   @override
   void initState() {
     super.initState();
+
+    _cloudinaryService = CloudinaryUploadService(
+      backendBaseUrl: foodSenseApiBaseUrl,
+    );
 
     _mealsPreparedController.addListener(_refreshRemainingPreview);
     _mealsConsumedController.addListener(_refreshRemainingPreview);
@@ -83,6 +106,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     _mealsPreparedController.dispose();
     _mealsConsumedController.dispose();
     _wasteKgController.dispose();
+    _cloudinaryService.dispose();
 
     super.dispose();
   }
@@ -143,8 +167,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
 
       setState(() {
         _isLoadingRecord = false;
-        _loadError =
-            error.message?.toString() ?? 'Invalid record information.';
+        _loadError = error.message?.toString() ?? 'Invalid record information.';
       });
     } on StateError catch (error) {
       if (!mounted) {
@@ -187,6 +210,8 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     _mealsConsumedController.text = record.mealsConsumed.toString();
     _wasteKgController.text = record.wasteKg.toString();
     _specialEvent = record.specialEvent;
+    _selectedImage = null;
+    _removeExistingImage = false;
   }
 
   Future<void> _pickRecordDate() async {
@@ -205,11 +230,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     }
 
     setState(() {
-      _recordDate = DateTime(
-        picked.year,
-        picked.month,
-        picked.day,
-      );
+      _recordDate = DateTime(picked.year, picked.month, picked.day);
     });
   }
 
@@ -221,10 +242,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     return double.tryParse(value.trim()) ?? 0;
   }
 
-  String? _requiredTextValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _requiredTextValidator(String? value, {required String label}) {
     if (value == null || value.trim().isEmpty) {
       return '$label is required.';
     }
@@ -232,10 +250,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     return null;
   }
 
-  String? _nonNegativeIntValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _nonNegativeIntValidator(String? value, {required String label}) {
     final String text = value?.trim() ?? '';
 
     if (text.isEmpty) {
@@ -251,10 +266,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     return null;
   }
 
-  String? _nonNegativeDoubleValidator(
-    String? value, {
-    required String label,
-  }) {
+  String? _nonNegativeDoubleValidator(String? value, {required String label}) {
     final String text = value?.trim() ?? '';
 
     if (text.isEmpty) {
@@ -271,24 +283,308 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
   }
 
   int get _previewRemainingMeals {
-    final int prepared =
-        _parseIntOrZero(_mealsPreparedController.text);
-    final int consumed =
-        _parseIntOrZero(_mealsConsumedController.text);
+    final int prepared = _parseIntOrZero(_mealsPreparedController.text);
+    final int consumed = _parseIntOrZero(_mealsConsumedController.text);
 
     final int remaining = prepared - consumed;
 
     return remaining < 0 ? 0 : remaining;
   }
 
+  Future<void> _chooseImage() async {
+    if (_isSaving || _isPickingImage) {
+      return;
+    }
+
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: const Text('Take a photo'),
+                  subtitle: const Text('Use the device camera'),
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(ImageSource.camera),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Choose from gallery'),
+                  subtitle: const Text('Select an existing food photo'),
+                  onTap: () =>
+                      Navigator.of(sheetContext).pop(ImageSource.gallery),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (source == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isPickingImage = true;
+      _removeExistingImage = false;
+    });
+
+    try {
+      final XFile? picked = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 1600,
+        maxHeight: 1600,
+      );
+
+      if (picked == null || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedImage = File(picked.path);
+      });
+    } catch (error) {
+      debugPrint('Edit food record image picker error: $error');
+
+      if (!mounted) {
+        return;
+      }
+
+      _showMessage(
+        'Unable to select the food photo. Please try again.',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPickingImage = false;
+        });
+      }
+    }
+  }
+
+  void _removeSelectedImage() {
+    if (_isSaving) {
+      return;
+    }
+
+    setState(() {
+      _selectedImage = null;
+    });
+  }
+
+  void _markExistingImageForRemoval() {
+    if (_isSaving) {
+      return;
+    }
+
+    setState(() {
+      _removeExistingImage = true;
+    });
+  }
+
+  void _restoreExistingImage() {
+    if (_isSaving) {
+      return;
+    }
+
+    setState(() {
+      _removeExistingImage = false;
+    });
+  }
+
+  Widget _buildImageSection(ThemeData theme) {
+    final DailyFoodRecord? record = _record;
+    final File? selectedImage = _selectedImage;
+    final String? existingImageUrl = _removeExistingImage
+        ? null
+        : record?.imageUrl;
+    final bool hasExistingImage =
+        existingImageUrl != null && existingImageUrl.trim().isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(Icons.image_outlined, color: theme.colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Food photo',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Photos are stored in Cloudinary. Firestore keeps only the '
+            'Cloudinary URL and public ID.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 14),
+          if (selectedImage != null) ...<Widget>[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Image.file(
+                  selectedImage,
+                  fit: BoxFit.cover,
+                  errorBuilder:
+                      (
+                        BuildContext context,
+                        Object error,
+                        StackTrace? stackTrace,
+                      ) {
+                        return Container(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.broken_image_outlined,
+                            size: 40,
+                          ),
+                        );
+                      },
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'New photo selected. Saving will upload it to Cloudinary.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+          ] else if (hasExistingImage) ...<Widget>[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Image.network(
+                  existingImageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder:
+                      (
+                        BuildContext context,
+                        Object error,
+                        StackTrace? stackTrace,
+                      ) {
+                        return Container(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.broken_image_outlined,
+                            size: 40,
+                          ),
+                        );
+                      },
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Current food photo',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ] else if (_removeExistingImage) ...<Widget>[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    color: theme.colorScheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'The photo will be removed from this record.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: (_isSaving || _isPickingImage) ? null : _chooseImage,
+                icon: _isPickingImage
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add_a_photo_outlined),
+                label: Text(
+                  _isPickingImage
+                      ? 'Selecting photo...'
+                      : hasExistingImage || selectedImage != null
+                      ? 'Change photo'
+                      : 'Add photo',
+                ),
+              ),
+              if (selectedImage != null)
+                TextButton.icon(
+                  onPressed: _isSaving ? null : _removeSelectedImage,
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text('Discard new photo'),
+                ),
+              if (hasExistingImage)
+                TextButton.icon(
+                  onPressed: _isSaving ? null : _markExistingImageForRemoval,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Remove photo'),
+                ),
+              if (_removeExistingImage)
+                TextButton.icon(
+                  onPressed: _isSaving ? null : _restoreExistingImage,
+                  icon: const Icon(Icons.undo_rounded),
+                  label: const Text('Keep current photo'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _updateRecord() async {
     FocusManager.instance.primaryFocus?.unfocus();
 
     if (_record == null) {
-      _showMessage(
-        'The food record is not loaded yet.',
-        isError: true,
-      );
+      _showMessage('The food record is not loaded yet.', isError: true);
       return;
     }
 
@@ -305,16 +601,11 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
       return;
     }
 
-    final int expectedPeople =
-        _parseIntOrZero(_expectedPeopleController.text);
-    final int actualPeople =
-        _parseIntOrZero(_actualPeopleController.text);
-    final int mealsPrepared =
-        _parseIntOrZero(_mealsPreparedController.text);
-    final int mealsConsumed =
-        _parseIntOrZero(_mealsConsumedController.text);
-    final double wasteKg =
-        _parseDoubleOrZero(_wasteKgController.text);
+    final int expectedPeople = _parseIntOrZero(_expectedPeopleController.text);
+    final int actualPeople = _parseIntOrZero(_actualPeopleController.text);
+    final int mealsPrepared = _parseIntOrZero(_mealsPreparedController.text);
+    final int mealsConsumed = _parseIntOrZero(_mealsConsumedController.text);
+    final double wasteKg = _parseDoubleOrZero(_wasteKgController.text);
 
     if (actualPeople > expectedPeople) {
       _showMessage(
@@ -332,6 +623,9 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
       return;
     }
 
+    final bool hasNewImage = _selectedImage != null;
+    final bool removeImage = _removeExistingImage && !hasNewImage;
+
     final DailyFoodRecord updatedRecord = _record!.copyWith(
       organizationId: widget.organizationId,
       recordDate: _recordDate,
@@ -344,6 +638,8 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
       mealsRemaining: mealsPrepared - mealsConsumed,
       wasteKg: wasteKg,
       specialEvent: _specialEvent,
+      imageUrl: removeImage ? '' : _record!.imageUrl,
+      imagePublicId: removeImage ? '' : _record!.imagePublicId,
     );
 
     setState(() {
@@ -351,19 +647,104 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     });
 
     try {
-      final DailyFoodRecord savedRecord =
-          await _repository.updateRecord(updatedRecord);
+      final DailyFoodRecord originalRecord = _record!;
+
+      final String oldImagePublicId =
+          originalRecord.imagePublicId?.trim() ?? '';
+
+      DailyFoodRecord savedRecord;
+
+      if (hasNewImage) {
+        // Upload the new asset first so an existing Cloudinary image remains
+        // available until the new upload succeeds.
+        final CloudinaryUploadResult uploadResult = await _cloudinaryService
+            .uploadFoodRecordImage(
+              file: _selectedImage!,
+              organizationId: widget.organizationId,
+              recordId: originalRecord.id,
+            );
+
+        savedRecord = await _repository.updateRecord(
+          updatedRecord.copyWith(
+            imageUrl: uploadResult.secureUrl,
+            imagePublicId: uploadResult.publicId,
+          ),
+        );
+
+        // The current FoodSense signer uses the record ID as the Cloudinary
+        // public ID. When the public ID is reused, Cloudinary replaces the
+        // existing asset, so deleting the old public ID would delete the new
+        // image as well. Unique-public-ID cleanup is supported for future
+        // signer changes.
+        if (oldImagePublicId.isNotEmpty &&
+            oldImagePublicId != uploadResult.publicId) {
+          try {
+            await _cloudinaryService.deleteAsset(
+              organizationId: widget.organizationId,
+              mediaType: 'food_records',
+              entityId: savedRecord.id,
+              publicId: oldImagePublicId,
+              resourceType: 'image',
+            );
+          } catch (cleanupError) {
+            debugPrint(
+              'Old Cloudinary food image cleanup error: $cleanupError',
+            );
+          }
+        }
+      } else if (removeImage) {
+        // The backend delete endpoint verifies the asset is still linked to
+        // this Firestore record, so delete the asset before clearing the
+        // Firestore image references.
+        if (oldImagePublicId.isNotEmpty) {
+          await _cloudinaryService.deleteAsset(
+            organizationId: widget.organizationId,
+            mediaType: 'food_records',
+            entityId: originalRecord.id,
+            publicId: oldImagePublicId,
+            resourceType: 'image',
+          );
+        }
+
+        savedRecord = await _repository.clearImage(
+          organizationId: widget.organizationId,
+          recordId: originalRecord.id,
+        );
+
+        // Preserve any non-media edits made in the same operation.
+        savedRecord = await _repository.updateRecord(
+          savedRecord.copyWith(
+            organizationId: widget.organizationId,
+            recordDate: _recordDate,
+            mealType: _selectedMealType,
+            menu: _menuController.text.trim(),
+            expectedPeople: expectedPeople,
+            actualPeople: actualPeople,
+            mealsPrepared: mealsPrepared,
+            mealsConsumed: mealsConsumed,
+            mealsRemaining: mealsPrepared - mealsConsumed,
+            wasteKg: wasteKg,
+            specialEvent: _specialEvent,
+          ),
+        );
+      } else {
+        savedRecord = await _repository.updateRecord(updatedRecord);
+      }
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _record = savedRecord;
-      });
+      _record = savedRecord;
+      _selectedImage = null;
+      _removeExistingImage = false;
 
       _showMessage(
-        'Food record updated successfully.',
+        hasNewImage
+            ? 'Food record and photo updated successfully.'
+            : removeImage
+            ? 'Food record updated and photo removed.'
+            : 'Food record updated successfully.',
         isError: false,
       );
 
@@ -378,10 +759,15 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
         '${error.code} ${error.message}',
       );
 
-      _showMessage(
-        _firebaseErrorMessage(error),
-        isError: true,
-      );
+      _showMessage(_firebaseErrorMessage(error), isError: true);
+    } on CloudinaryUploadException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      debugPrint('Edit food record Cloudinary error: $error');
+
+      _showMessage(error.message, isError: true);
     } on ArgumentError catch (error) {
       if (!mounted) {
         return;
@@ -396,10 +782,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
         return;
       }
 
-      _showMessage(
-        error.message,
-        isError: true,
-      );
+      _showMessage(error.message, isError: true);
     } catch (error) {
       if (!mounted) {
         return;
@@ -435,10 +818,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
     }
   }
 
-  void _showMessage(
-    String message, {
-    required bool isError,
-  }) {
+  void _showMessage(String message, {required bool isError}) {
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     ScaffoldMessenger.of(context)
@@ -473,9 +853,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
   }
 
   Widget _buildLoading() {
-    return const Center(
-      child: CircularProgressIndicator(),
-    );
+    return const Center(child: CircularProgressIndicator());
   }
 
   Widget _buildError() {
@@ -491,25 +869,20 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
               radius: 32,
               backgroundColor: colors.errorContainer,
               foregroundColor: colors.onErrorContainer,
-              child: const Icon(
-                Icons.error_outline_rounded,
-                size: 30,
-              ),
+              child: const Icon(Icons.error_outline_rounded, size: 30),
             ),
             const SizedBox(height: 16),
             Text(
               'Could not load food record',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               _loadError ?? 'Something went wrong.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 18),
@@ -594,14 +967,11 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                     value: _selectedMealType,
                     decoration: const InputDecoration(
                       labelText: 'Meal type',
-                      prefixIcon: Icon(
-                        Icons.restaurant_menu_outlined,
-                      ),
+                      prefixIcon: Icon(Icons.restaurant_menu_outlined),
                     ),
                     items: _mealTypes
                         .map(
-                          (String mealType) =>
-                              DropdownMenuItem<String>(
+                          (String mealType) => DropdownMenuItem<String>(
                             value: mealType,
                             child: Text(mealType),
                           ),
@@ -633,11 +1003,10 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                       alignLabelWithHint: true,
                     ),
                     validator: (String? value) =>
-                        _requiredTextValidator(
-                      value,
-                      label: 'Menu',
-                    ),
+                        _requiredTextValidator(value, label: 'Menu'),
                   ),
+                  const SizedBox(height: 24),
+                  _buildImageSection(theme),
                   const SizedBox(height: 24),
                   Text(
                     'People and production',
@@ -652,8 +1021,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                     hint: 'e.g. 850',
                     icon: Icons.people_outline_rounded,
                     suffix: 'people',
-                    validator: (String? value) =>
-                        _nonNegativeIntValidator(
+                    validator: (String? value) => _nonNegativeIntValidator(
                       value,
                       label: 'Expected people',
                     ),
@@ -666,10 +1034,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                     icon: Icons.groups_2_outlined,
                     suffix: 'people',
                     validator: (String? value) =>
-                        _nonNegativeIntValidator(
-                      value,
-                      label: 'Actual people',
-                    ),
+                        _nonNegativeIntValidator(value, label: 'Actual people'),
                   ),
                   const SizedBox(height: 16),
                   _buildNumberField(
@@ -678,8 +1043,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                     hint: 'e.g. 850',
                     icon: Icons.restaurant_outlined,
                     suffix: 'meals',
-                    validator: (String? value) =>
-                        _nonNegativeIntValidator(
+                    validator: (String? value) => _nonNegativeIntValidator(
                       value,
                       label: 'Meals prepared',
                     ),
@@ -691,8 +1055,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                     hint: 'e.g. 810',
                     icon: Icons.restaurant_rounded,
                     suffix: 'meals',
-                    validator: (String? value) =>
-                        _nonNegativeIntValidator(
+                    validator: (String? value) => _nonNegativeIntValidator(
                       value,
                       label: 'Meals consumed',
                     ),
@@ -705,10 +1068,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                     icon: Icons.delete_outline_rounded,
                     suffix: 'kg',
                     validator: (String? value) =>
-                        _nonNegativeDoubleValidator(
-                      value,
-                      label: 'Food waste',
-                    ),
+                        _nonNegativeDoubleValidator(value, label: 'Food waste'),
                   ),
                   const SizedBox(height: 16),
                   Container(
@@ -728,9 +1088,7 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                           child: Text(
                             'Meals remaining: $_previewRemainingMeals',
                             style: theme.textTheme.titleSmall?.copyWith(
-                              color: theme
-                                  .colorScheme
-                                  .onSecondaryContainer,
+                              color: theme.colorScheme.onSecondaryContainer,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -762,17 +1120,13 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
                         ? const SizedBox(
                             height: 22,
                             width: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
                           )
                         : const Text('Save Changes'),
                   ),
                   const SizedBox(height: 10),
                   OutlinedButton(
-                    onPressed: _isSaving
-                        ? null
-                        : () => context.pop(),
+                    onPressed: _isSaving ? null : () => context.pop(),
                     child: const Text('Cancel'),
                   ),
                 ],
@@ -787,14 +1141,12 @@ class _EditDailyRecordScreenState extends State<EditDailyRecordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Food Record'),
-      ),
+      appBar: AppBar(title: const Text('Edit Food Record')),
       body: _isLoadingRecord
           ? _buildLoading()
           : _loadError != null
-              ? _buildError()
-              : _buildForm(),
+          ? _buildError()
+          : _buildForm(),
     );
   }
 }

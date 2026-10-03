@@ -17,11 +17,9 @@ import '../models/organization_model.dart';
 /// This avoids collection-wide owner queries and gives us a deterministic,
 /// scalable relationship between a user and their organization.
 class OrganizationRepository {
-  OrganizationRepository({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? auth,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  OrganizationRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
@@ -32,9 +30,7 @@ class OrganizationRepository {
   CollectionReference<Map<String, dynamic>> _membersCollection(
     String organizationId,
   ) {
-    return _organizationsCollection
-        .doc(organizationId)
-        .collection('members');
+    return _organizationsCollection.doc(organizationId).collection('members');
   }
 
   /// Creates a new organization for the currently signed-in user.
@@ -50,9 +46,7 @@ class OrganizationRepository {
     final User? currentUser = _auth.currentUser;
 
     if (currentUser == null) {
-      throw StateError(
-        'You must be signed in to create an organization.',
-      );
+      throw StateError('You must be signed in to create an organization.');
     }
 
     final String normalizedName = name.trim();
@@ -97,9 +91,7 @@ class OrganizationRepository {
       address: normalizedAddress,
       city: normalizedCity,
       state: normalizedState,
-      country: normalizedCountry.isEmpty
-          ? 'India'
-          : normalizedCountry,
+      country: normalizedCountry.isEmpty ? 'India' : normalizedCountry,
       peopleServed: peopleServed,
       ownerId: currentUser.uid,
     );
@@ -114,9 +106,7 @@ class OrganizationRepository {
   }
 
   /// Gets an organization by its document ID.
-  Future<OrganizationModel?> getOrganization(
-    String organizationId,
-  ) async {
+  Future<OrganizationModel?> getOrganization(String organizationId) async {
     final String id = organizationId.trim();
 
     if (id.isEmpty) {
@@ -151,24 +141,20 @@ class OrganizationRepository {
       return null;
     }
 
-    final DocumentSnapshot<Map<String, dynamic>> userSnapshot =
-        await _firestore
-            .collection('users')
-            .doc(currentUser.uid)
-            .get();
+    final DocumentSnapshot<Map<String, dynamic>> userSnapshot = await _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
 
     if (!userSnapshot.exists) {
       return null;
     }
 
-    final Map<String, dynamic> userData =
-        userSnapshot.data() ?? {};
+    final Map<String, dynamic> userData = userSnapshot.data() ?? {};
 
-    final dynamic organizationIdValue =
-        userData['organizationId'];
+    final dynamic organizationIdValue = userData['organizationId'];
 
-    if (organizationIdValue is! String ||
-        organizationIdValue.trim().isEmpty) {
+    if (organizationIdValue is! String || organizationIdValue.trim().isEmpty) {
       return null;
     }
 
@@ -176,56 +162,37 @@ class OrganizationRepository {
   }
 
   /// Updates an existing organization.
-  Future<void> updateOrganization(
-    OrganizationModel organization,
-  ) async {
+  Future<void> updateOrganization(OrganizationModel organization) async {
     final User? currentUser = _auth.currentUser;
 
     if (currentUser == null) {
-      throw StateError(
-        'You must be signed in to update an organization.',
-      );
+      throw StateError('You must be signed in to update an organization.');
     }
 
     if (organization.id.trim().isEmpty) {
-      throw ArgumentError(
-        'Organization ID cannot be empty.',
-      );
+      throw ArgumentError('Organization ID cannot be empty.');
     }
 
     if (organization.ownerId != currentUser.uid) {
-      throw StateError(
-        'You can only update an organization that you own.',
-      );
+      throw StateError('You can only update an organization that you own.');
     }
 
     if (organization.name.trim().isEmpty) {
-      throw ArgumentError(
-        'Organization name cannot be empty.',
-      );
+      throw ArgumentError('Organization name cannot be empty.');
     }
 
     if (organization.type.trim().isEmpty) {
-      throw ArgumentError(
-        'Organization type cannot be empty.',
-      );
+      throw ArgumentError('Organization type cannot be empty.');
     }
 
     if (organization.peopleServed < 0) {
-      throw ArgumentError(
-        'People served cannot be negative.',
-      );
+      throw ArgumentError('People served cannot be negative.');
     }
 
-    await _organizationsCollection
-        .doc(organization.id)
-        .set(
-      {
-        ...organization.toMap(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _organizationsCollection.doc(organization.id).set({
+      ...organization.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// Deletes an organization owned by the current user.
@@ -233,46 +200,39 @@ class OrganizationRepository {
   /// Destructive deletion of organization subcollections should eventually
   /// be performed by trusted backend code. Phase 1 only deletes the
   /// organization metadata document.
-  Future<void> deleteOrganization(
-    String organizationId,
-  ) async {
+  Future<void> deleteOrganization(String organizationId) async {
     final User? currentUser = _auth.currentUser;
 
     if (currentUser == null) {
-      throw StateError(
-        'You must be signed in to delete an organization.',
-      );
+      throw StateError('You must be signed in to delete an organization.');
     }
 
-    final OrganizationModel? organization =
-        await getOrganization(organizationId);
+    final OrganizationModel? organization = await getOrganization(
+      organizationId,
+    );
 
     if (organization == null) {
       return;
     }
 
     if (organization.ownerId != currentUser.uid) {
-      throw StateError(
-        'You can only delete an organization that you own.',
-      );
+      throw StateError('You can only delete an organization that you own.');
     }
 
-    await _organizationsCollection
-        .doc(organization.id)
-        .delete();
+    await _organizationsCollection.doc(organization.id).delete();
   }
 
   /// Checks whether the current user owns the supplied organization.
   Future<bool> isOwner(String organizationId) async {
     final User? currentUser = _auth.currentUser;
 
-    if (currentUser == null ||
-        organizationId.trim().isEmpty) {
+    if (currentUser == null || organizationId.trim().isEmpty) {
       return false;
     }
 
-    final OrganizationModel? organization =
-        await getOrganization(organizationId);
+    final OrganizationModel? organization = await getOrganization(
+      organizationId,
+    );
 
     return organization?.ownerId == currentUser.uid;
   }
@@ -282,20 +242,15 @@ class OrganizationRepository {
   /// The owner does not need a member document; ownership is represented on
   /// the organization itself. This method becomes useful when team members
   /// are introduced in a later Phase 1/Phase 2 step.
-  Future<Map<String, dynamic>?> getMyMembership(
-    String organizationId,
-  ) async {
+  Future<Map<String, dynamic>?> getMyMembership(String organizationId) async {
     final User? currentUser = _auth.currentUser;
 
-    if (currentUser == null ||
-        organizationId.trim().isEmpty) {
+    if (currentUser == null || organizationId.trim().isEmpty) {
       return null;
     }
 
     final DocumentSnapshot<Map<String, dynamic>> snapshot =
-        await _membersCollection(organizationId)
-            .doc(currentUser.uid)
-            .get();
+        await _membersCollection(organizationId).doc(currentUser.uid).get();
 
     if (!snapshot.exists) {
       return null;

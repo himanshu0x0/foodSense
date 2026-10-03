@@ -16,5 +16,11 @@ firebase-admin>=6.5,<8.0
 google-cloud-firestore>=2.19,<3.0
 pydantic>=2.7,<3.0
 
+# Cloudinary media management
+#
+# Used by the backend to generate signed image-upload parameters and
+# manage FoodSense media assets securely.
+cloudinary>=1.44,<2.0
+
 # Optional environment-file support for local development.
 python-dotenv>=1.0,<2.0

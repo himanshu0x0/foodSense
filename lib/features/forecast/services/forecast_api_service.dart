@@ -8,9 +8,8 @@ import 'package:foodsense/features/forecast/models/forecast_model.dart';
 /// UI/widgets should depend on this service rather than constructing API
 /// payloads directly.
 class ForecastApiService {
-  ForecastApiService({
-    required FoodSenseAiApiClient apiClient,
-  }) : _apiClient = apiClient;
+  ForecastApiService({required FoodSenseAiApiClient apiClient})
+    : _apiClient = apiClient;
 
   final FoodSenseAiApiClient _apiClient;
 
@@ -33,16 +32,14 @@ class ForecastApiService {
       expectedPeople: expectedPeople,
     );
 
-    final response = await _apiClient.forecast(
-      <String, dynamic>{
-        'organization_id': organizationId.trim(),
-        'forecast_date': _dateOnly(forecastDate),
-        'meal_type': mealType,
-        'expected_people': expectedPeople,
-        'special_event': specialEvent,
-        if (menu != null && menu.trim().isNotEmpty) 'menu': menu.trim(),
-      },
-    );
+    final response = await _apiClient.forecast(<String, dynamic>{
+      'organization_id': organizationId.trim(),
+      'forecast_date': _dateOnly(forecastDate),
+      'meal_type': mealType,
+      'expected_people': expectedPeople,
+      'special_event': specialEvent,
+      if (menu != null && menu.trim().isNotEmpty) 'menu': menu.trim(),
+    });
 
     return ForecastModel.fromMap(response);
   }

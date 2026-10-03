@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/dashboard/presentation/phase2_ai_hub_screen.dart';
+import '../features/delivery_tracking/redistribution_network_screen_v2.dart';
 import '../features/food_records/presentation/daily_record_screen.dart';
 import '../features/food_records/presentation/edit_daily_record_screen.dart';
 import '../features/food_records/presentation/record_history_screen.dart';
@@ -15,14 +17,9 @@ import '../features/inventory/presentation/inventory_screen.dart';
 import '../features/organization/presentation/organization_profile_screen.dart';
 import '../features/organization/presentation/organization_setup_screen.dart';
 import '../features/surplus/screens/surplus_screen.dart';
+import '../features/surplus/screens/surplus_scenario_screen.dart';
 import '../features/waste/screens/waste_analysis_screen.dart';
 
-/// FoodSense application router.
-///
-/// Navigation responsibilities stay in the app layer while feature screens
-/// contain their own presentation logic.
-///
-/// Protected routes require an authenticated Firebase user.
 class AppRouter {
   AppRouter._();
 
@@ -34,55 +31,92 @@ class AppRouter {
     redirect: (BuildContext context, GoRouterState state) {
       final User? user = FirebaseAuth.instance.currentUser;
       final bool isAuthenticated = user != null;
-
       final String path = state.uri.path;
       final bool isAuthRoute = path == '/login' || path == '/register';
 
       if (!isAuthenticated && !isAuthRoute) {
         return '/login';
       }
-
       if (isAuthenticated && isAuthRoute) {
         return '/dashboard';
       }
-
       return null;
     },
     routes: <RouteBase>[
       GoRoute(
         path: '/login',
         name: 'login',
-        builder: (BuildContext context, GoRouterState state) {
-          return const LoginScreen();
-        },
+        builder: (BuildContext context, GoRouterState state) =>
+            const LoginScreen(),
       ),
       GoRoute(
         path: '/register',
         name: 'register',
-        builder: (BuildContext context, GoRouterState state) {
-          return const RegisterScreen();
-        },
+        builder: (BuildContext context, GoRouterState state) =>
+            const RegisterScreen(),
       ),
       GoRoute(
         path: '/dashboard',
         name: 'dashboard',
+        builder: (BuildContext context, GoRouterState state) =>
+            const DashboardScreen(),
+      ),
+      GoRoute(
+        path: '/ai/:organizationId',
+        name: 'phase2Ai',
         builder: (BuildContext context, GoRouterState state) {
-          return const DashboardScreen();
+          final String organizationId =
+              state.pathParameters['organizationId'] ?? '';
+          return Phase2AiHubScreen(organizationId: organizationId);
+        },
+      ),
+      GoRoute(
+        path: '/forecast/:organizationId',
+        name: 'forecast',
+        builder: (BuildContext context, GoRouterState state) {
+          final String organizationId =
+              state.pathParameters['organizationId'] ?? '';
+          return ForecastScreen(organizationId: organizationId);
+        },
+      ),
+      GoRoute(
+        path: '/surplus/:organizationId',
+        name: 'surplus',
+        builder: (BuildContext context, GoRouterState state) {
+          final String organizationId =
+              state.pathParameters['organizationId'] ?? '';
+          return SurplusScreen(organizationId: organizationId);
+        },
+      ),
+      GoRoute(
+        path: '/surplus-scenarios/:organizationId',
+        name: 'surplusScenarios',
+        builder: (BuildContext context, GoRouterState state) {
+          final String organizationId =
+              state.pathParameters['organizationId'] ?? '';
+          return SurplusScenarioScreen(organizationId: organizationId);
+        },
+      ),
+      GoRoute(
+        path: '/waste/:organizationId',
+        name: 'waste',
+        builder: (BuildContext context, GoRouterState state) {
+          final String organizationId =
+              state.pathParameters['organizationId'] ?? '';
+          return WasteAnalysisScreen(organizationId: organizationId);
         },
       ),
       GoRoute(
         path: '/organization/setup',
         name: 'organizationSetup',
-        builder: (BuildContext context, GoRouterState state) {
-          return const OrganizationSetupScreen();
-        },
+        builder: (BuildContext context, GoRouterState state) =>
+            const OrganizationSetupScreen(),
       ),
       GoRoute(
         path: '/organization/profile',
         name: 'organizationProfile',
-        builder: (BuildContext context, GoRouterState state) {
-          return const OrganizationProfileScreen();
-        },
+        builder: (BuildContext context, GoRouterState state) =>
+            const OrganizationProfileScreen(),
       ),
       GoRoute(
         path: '/inventory/:organizationId',
@@ -90,10 +124,7 @@ class AppRouter {
         builder: (BuildContext context, GoRouterState state) {
           final String organizationId =
               state.pathParameters['organizationId'] ?? '';
-
-          return InventoryScreen(
-            organizationId: organizationId,
-          );
+          return InventoryScreen(organizationId: organizationId);
         },
       ),
       GoRoute(
@@ -102,10 +133,7 @@ class AppRouter {
         builder: (BuildContext context, GoRouterState state) {
           final String organizationId =
               state.pathParameters['organizationId'] ?? '';
-
-          return DailyRecordScreen(
-            organizationId: organizationId,
-          );
+          return DailyRecordScreen(organizationId: organizationId);
         },
       ),
       GoRoute(
@@ -114,10 +142,7 @@ class AppRouter {
         builder: (BuildContext context, GoRouterState state) {
           final String organizationId =
               state.pathParameters['organizationId'] ?? '';
-
-          return RecordHistoryScreen(
-            organizationId: organizationId,
-          );
+          return RecordHistoryScreen(organizationId: organizationId);
         },
       ),
       GoRoute(
@@ -127,7 +152,6 @@ class AppRouter {
           final String organizationId =
               state.pathParameters['organizationId'] ?? '';
           final String recordId = state.pathParameters['recordId'] ?? '';
-
           return EditDailyRecordScreen(
             organizationId: organizationId,
             recordId: recordId,
@@ -135,50 +159,20 @@ class AppRouter {
         },
       ),
       GoRoute(
-        path: '/forecast/:organizationId',
-        name: 'forecast',
+        path: '/redistribution-network/:organizationId',
+        name: 'redistributionNetworkV2',
         builder: (BuildContext context, GoRouterState state) {
           final String organizationId =
               state.pathParameters['organizationId'] ?? '';
-
-          return ForecastScreen(
-            organizationId: organizationId,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/surplus/:organizationId',
-        name: 'surplus',
-        builder: (BuildContext context, GoRouterState state) {
-          final String organizationId =
-              state.pathParameters['organizationId'] ?? '';
-
-          return SurplusScreen(
-            organizationId: organizationId,
-          );
-        },
-      ),
-      GoRoute(
-        path: '/waste/:organizationId',
-        name: 'wasteAnalysis',
-        builder: (BuildContext context, GoRouterState state) {
-          final String organizationId =
-              state.pathParameters['organizationId'] ?? '';
-
-          return WasteAnalysisScreen(
-            organizationId: organizationId,
-          );
+          return RedistributionNetworkScreenV2(organizationId: organizationId);
         },
       ),
     ],
   );
 }
 
-/// Router instance used by [MaterialApp.router].
 final GoRouter appRouter = AppRouter.router;
 
-/// Converts Firebase auth-state changes into a [Listenable] so GoRouter
-/// refreshes route guards after sign-in or sign-out.
 class _AuthChangeNotifier extends ChangeNotifier {
   _AuthChangeNotifier(Stream<User?> authChanges) {
     _subscription = authChanges.listen((_) {

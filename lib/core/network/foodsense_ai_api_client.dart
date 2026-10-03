@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -29,95 +28,62 @@ class FoodSenseApiException implements Exception {
 /// - Sends it as `Authorization: Bearer <token>`.
 /// - Handles 401/403/422/server errors consistently.
 /// - Retries a 401 once with a refreshed Firebase token.
-/// - Keeps the backend base URL configurable for emulator, physical device,
-///   and production environments.
-///
-/// Example:
-/// ```dart
-/// final api = FoodSenseAiApiClient(
-///   baseUrl: 'http://10.0.2.2:8000',
-/// );
-///
-/// final forecast = await api.forecast({
-///   'organization_id': organizationId,
-///   'forecast_date': '2026-09-26',
-///   'meal_type': 'Lunch',
-///   'expected_people': 1800,
-///   'special_event': false,
-///   'menu': 'Standard Lunch',
-/// });
-/// ```
+/// - Supports both JSON-object and JSON-array responses.
+/// - Keeps the backend base URL configurable.
 class FoodSenseAiApiClient {
   FoodSenseAiApiClient({
     required String baseUrl,
     http.Client? httpClient,
     FirebaseAuth? firebaseAuth,
-    Duration timeout = const Duration(seconds: 30),
-  })  : baseUrl = _normalizeBaseUrl(baseUrl),
-        _httpClient = httpClient ?? http.Client(),
-        _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
-        _timeout = timeout;
+    this.timeout = const Duration(seconds: 30),
+  }) : baseUrl = _normalizeBaseUrl(baseUrl),
+       _httpClient = httpClient ?? http.Client(),
+       _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
 
   final String baseUrl;
   final http.Client _httpClient;
   final FirebaseAuth _firebaseAuth;
-  final Duration _timeout;
+  final Duration timeout;
 
-  /// Calls GET /forecast/health without Firebase authentication.
   Future<Map<String, dynamic>> forecastHealth() {
-    return _get('/forecast/health');
+    return _getObject('/forecast/health');
   }
 
-  /// Calls GET /surplus/health without Firebase authentication.
   Future<Map<String, dynamic>> surplusHealth() {
-    return _get('/surplus/health');
+    return _getObject('/surplus/health');
   }
 
-  /// Calls GET /waste/health without Firebase authentication.
   Future<Map<String, dynamic>> wasteHealth() {
-    return _get('/waste/health');
+    return _getObject('/waste/health');
   }
 
-  /// Calls POST /forecast with the current Firebase user's ID token.
-  Future<Map<String, dynamic>> forecast(
-    Map<String, dynamic> request,
-  ) {
-    return _postAuthenticated('/forecast', request);
+  Future<Map<String, dynamic>> forecast(Map<String, dynamic> request) {
+    return _postAuthenticatedObject('/forecast', request);
   }
 
-  /// Calls POST /surplus with the current Firebase user's ID token.
-  Future<Map<String, dynamic>> surplus(
-    Map<String, dynamic> request,
-  ) {
-    return _postAuthenticated('/surplus', request);
+  Future<Map<String, dynamic>> surplus(Map<String, dynamic> request) {
+    return _postAuthenticatedObject('/surplus', request);
   }
 
-  /// Calls POST /surplus/scenarios with the current Firebase user's ID token.
-  Future<Map<String, dynamic>> surplusScenarios(
-    Map<String, dynamic> request,
-  ) {
-    return _postAuthenticated('/surplus/scenarios', request);
-  }
-
-  /// Calls POST /waste with the current Firebase user's ID token.
-  Future<Map<String, dynamic>> waste(
-    Map<String, dynamic> request,
-  ) {
-    return _postAuthenticated('/waste', request);
-  }
-
-  /// Calls POST /waste/trend with the current Firebase user's ID token.
-  Future<Map<String, dynamic>> wasteTrend(
-    Map<String, dynamic> request,
-  ) {
-    return _postAuthenticated('/waste/trend', request);
-  }
-
-  /// Gets the current user's Firebase ID token.
+  /// Calls POST /surplus/scenarios.
   ///
-  /// Throws [FoodSenseApiException] when no user is signed in.
+  /// This endpoint returns a JSON array, unlike the other Phase 2 endpoints.
+  Future<List<Map<String, dynamic>>> surplusScenarios(
+    Map<String, dynamic> request,
+  ) {
+    return _postAuthenticatedList('/surplus/scenarios', request);
+  }
+
+  Future<Map<String, dynamic>> waste(Map<String, dynamic> request) {
+    return _postAuthenticatedObject('/waste', request);
+  }
+
+  Future<Map<String, dynamic>> wasteTrend(Map<String, dynamic> request) {
+    return _postAuthenticatedObject('/waste/trend', request);
+  }
+
   Future<String> _getIdToken({bool forceRefresh = false}) async {
-    final user = _firebaseAuth.currentUser;
+    final User? user = _firebaseAuth.currentUser;
 
     if (user == null) {
       throw const FoodSenseApiException(
@@ -126,7 +92,7 @@ class FoodSenseAiApiClient {
       );
     }
 
-    final token = await user.getIdToken(forceRefresh);
+    final String? token = await user.getIdToken(forceRefresh);
 
     if (token == null || token.isEmpty) {
       throw const FoodSenseApiException(
@@ -138,20 +104,65 @@ class FoodSenseAiApiClient {
     return token;
   }
 
-  Future<Map<String, dynamic>> _get(String path) async {
-    final response = await _httpClient
+  Future<Map<String, dynamic>> _getObject(String path) async {
+    final dynamic decoded = await _getJson(path);
+    return _asObject(decoded);
+  }
+
+  Future<Map<String, dynamic>> _postAuthenticatedObject(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final dynamic decoded = await _postAuthenticatedJson(path, body);
+
+    return _asObject(decoded);
+  }
+
+  Future<List<Map<String, dynamic>>> _postAuthenticatedList(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final dynamic decoded = await _postAuthenticatedJson(path, body);
+
+    if (decoded is! List) {
+      throw FoodSenseApiException(
+        statusCode: 200,
+        message: 'Backend returned an unexpected list response format.',
+        details: decoded,
+      );
+    }
+
+    final List<Map<String, dynamic>> result = <Map<String, dynamic>>[];
+
+    for (final dynamic item in decoded) {
+      if (item is Map<String, dynamic>) {
+        result.add(item);
+      } else if (item is Map) {
+        result.add(Map<String, dynamic>.from(item));
+      } else {
+        throw FoodSenseApiException(
+          statusCode: 200,
+          message: 'Backend returned an invalid item in the list response.',
+          details: item,
+        );
+      }
+    }
+
+    return result;
+  }
+
+  Future<dynamic> _getJson(String path) async {
+    final http.Response response = await _httpClient
         .get(
           _buildUri(path),
-          headers: const <String, String>{
-            'Accept': 'application/json',
-          },
+          headers: const <String, String>{'Accept': 'application/json'},
         )
-        .timeout(_timeout);
+        .timeout(timeout);
 
     return _decodeResponse(response);
   }
 
-  Future<Map<String, dynamic>> _postAuthenticated(
+  Future<dynamic> _postAuthenticatedJson(
     String path,
     Map<String, dynamic> body,
   ) async {
@@ -163,16 +174,10 @@ class FoodSenseAiApiClient {
       token: token,
     );
 
-    // If the token has expired between Firebase and the backend, refresh it
-    // once and retry. Other errors are returned immediately.
     if (response.statusCode == 401) {
       token = await _getIdToken(forceRefresh: true);
 
-      response = await _sendPost(
-        path: path,
-        body: body,
-        token: token,
-      );
+      response = await _sendPost(path: path, body: body, token: token);
     }
 
     return _decodeResponse(response);
@@ -193,11 +198,11 @@ class FoodSenseAiApiClient {
           },
           body: jsonEncode(body),
         )
-        .timeout(_timeout);
+        .timeout(timeout);
   }
 
-  Map<String, dynamic> _decodeResponse(http.Response response) {
-    Object? decoded;
+  dynamic _decodeResponse(http.Response response) {
+    dynamic decoded;
 
     if (response.body.trim().isNotEmpty) {
       try {
@@ -208,15 +213,7 @@ class FoodSenseAiApiClient {
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-
-      throw FoodSenseApiException(
-        statusCode: response.statusCode,
-        message: 'Backend returned an unexpected response format.',
-        details: decoded,
-      );
+      return decoded;
     }
 
     throw FoodSenseApiException(
@@ -226,9 +223,25 @@ class FoodSenseAiApiClient {
     );
   }
 
-  String _extractErrorMessage(Object? decoded, int statusCode) {
+  Map<String, dynamic> _asObject(dynamic decoded) {
     if (decoded is Map<String, dynamic>) {
-      final detail = decoded['detail'];
+      return decoded;
+    }
+
+    if (decoded is Map) {
+      return Map<String, dynamic>.from(decoded);
+    }
+
+    throw FoodSenseApiException(
+      statusCode: 200,
+      message: 'Backend returned an unexpected object response format.',
+      details: decoded,
+    );
+  }
+
+  String _extractErrorMessage(dynamic decoded, int statusCode) {
+    if (decoded is Map<String, dynamic>) {
+      final dynamic detail = decoded['detail'];
 
       if (detail is String && detail.isNotEmpty) {
         return detail;
@@ -236,10 +249,10 @@ class FoodSenseAiApiClient {
 
       if (detail is List && detail.isNotEmpty) {
         return detail
-            .map((item) {
+            .map((dynamic item) {
               if (item is Map<String, dynamic>) {
-                final message = item['msg'];
-                final location = item['loc'];
+                final dynamic message = item['msg'];
+                final dynamic location = item['loc'];
 
                 if (message != null && location != null) {
                   return '${location.toString()}: $message';
@@ -276,12 +289,13 @@ class FoodSenseAiApiClient {
   }
 
   Uri _buildUri(String path) {
-    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    final String normalizedPath = path.startsWith('/') ? path : '/$path';
+
     return Uri.parse('$baseUrl$normalizedPath');
   }
 
   static String _normalizeBaseUrl(String value) {
-    final trimmed = value.trim();
+    final String trimmed = value.trim();
 
     if (trimmed.isEmpty) {
       throw ArgumentError.value(
@@ -296,7 +310,6 @@ class FoodSenseAiApiClient {
         : trimmed;
   }
 
-  /// Releases the underlying HTTP client.
   void dispose() {
     _httpClient.close();
   }

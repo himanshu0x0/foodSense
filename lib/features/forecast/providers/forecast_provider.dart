@@ -26,9 +26,7 @@ const String foodSenseApiBaseUrl = String.fromEnvironment(
 /// reuse one client instead of creating a new HTTP connection pool for every
 /// forecast request.
 final foodSenseAiApiClientProvider = Provider<FoodSenseAiApiClient>((ref) {
-  final client = FoodSenseAiApiClient(
-    baseUrl: foodSenseApiBaseUrl,
-  );
+  final client = FoodSenseAiApiClient(baseUrl: foodSenseApiBaseUrl);
 
   ref.onDispose(client.dispose);
 
@@ -37,9 +35,7 @@ final foodSenseAiApiClientProvider = Provider<FoodSenseAiApiClient>((ref) {
 
 /// Typed demand-forecast service.
 final forecastApiServiceProvider = Provider<ForecastApiService>((ref) {
-  return ForecastApiService(
-    apiClient: ref.watch(foodSenseAiApiClientProvider),
-  );
+  return ForecastApiService(apiClient: ref.watch(foodSenseAiApiClientProvider));
 });
 
 /// Immutable parameters used to request one demand forecast.
@@ -114,9 +110,7 @@ class ForecastQuery {
     final a = left.toLocal();
     final b = right.toLocal();
 
-    return a.year == b.year &&
-        a.month == b.month &&
-        a.day == b.day;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
   @override
@@ -136,21 +130,19 @@ class ForecastQuery {
 ///
 /// Riverpod exposes the request as [AsyncValue], giving the UI a clean
 /// loading/data/error state without putting networking code in widgets.
-final forecastProvider =
-    FutureProvider.autoDispose.family<ForecastModel, ForecastQuery>(
-  (ref, query) async {
-    final service = ref.watch(forecastApiServiceProvider);
+final forecastProvider = FutureProvider.autoDispose
+    .family<ForecastModel, ForecastQuery>((ref, query) async {
+      final service = ref.watch(forecastApiServiceProvider);
 
-    return service.getForecast(
-      organizationId: query.organizationId,
-      forecastDate: query.forecastDate,
-      mealType: query.mealType,
-      expectedPeople: query.expectedPeople,
-      specialEvent: query.specialEvent,
-      menu: query.menu,
-    );
-  },
-);
+      return service.getForecast(
+        organizationId: query.organizationId,
+        forecastDate: query.forecastDate,
+        mealType: query.mealType,
+        expectedPeople: query.expectedPeople,
+        specialEvent: query.specialEvent,
+        menu: query.menu,
+      );
+    });
 
 /// Checks Forecast API health.
 ///

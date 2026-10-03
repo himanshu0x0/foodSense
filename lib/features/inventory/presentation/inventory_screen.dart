@@ -1,5 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/network/cloudinary_upload_service.dart';
 import '../data/inventory_repository.dart';
 import '../models/inventory_item.dart';
 import 'add_inventory_screen.dart';
@@ -19,10 +22,7 @@ import 'edit_inventory_screen.dart';
 /// - quantity updates
 /// - delete
 class InventoryScreen extends StatelessWidget {
-  const InventoryScreen({
-    super.key,
-    required this.organizationId,
-  });
+  const InventoryScreen({super.key, required this.organizationId});
 
   final String organizationId;
 
@@ -30,22 +30,16 @@ class InventoryScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     if (organizationId.trim().isEmpty) {
       return const Scaffold(
-        body: Center(
-          child: Text('Organization information is missing.'),
-        ),
+        body: Center(child: Text('Organization information is missing.')),
       );
     }
 
-    return _InventoryView(
-      organizationId: organizationId,
-    );
+    return _InventoryView(organizationId: organizationId);
   }
 }
 
 class _InventoryView extends StatefulWidget {
-  const _InventoryView({
-    required this.organizationId,
-  });
+  const _InventoryView({required this.organizationId});
 
   final String organizationId;
 
@@ -53,8 +47,14 @@ class _InventoryView extends StatefulWidget {
   State<_InventoryView> createState() => _InventoryViewState();
 }
 
+const String foodSenseApiBaseUrl = String.fromEnvironment(
+  'FOODSENSE_API_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8000',
+);
+
 class _InventoryViewState extends State<_InventoryView> {
   final InventoryRepository _repository = InventoryRepository();
+  late final CloudinaryUploadService _cloudinaryService;
 
   String _searchQuery = '';
   String _filter = 'all';
@@ -62,12 +62,25 @@ class _InventoryViewState extends State<_InventoryView> {
   bool get _isSignedIn => FirebaseAuth.instance.currentUser != null;
 
   @override
+  void initState() {
+    super.initState();
+
+    _cloudinaryService = CloudinaryUploadService(
+      backendBaseUrl: foodSenseApiBaseUrl,
+    );
+  }
+
+  @override
+  void dispose() {
+    _cloudinaryService.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (!_isSignedIn) {
       return const Scaffold(
-        body: Center(
-          child: Text('Please sign in to view inventory.'),
-        ),
+        body: Center(child: Text('Please sign in to view inventory.')),
       );
     }
 
@@ -75,6 +88,15 @@ class _InventoryViewState extends State<_InventoryView> {
       appBar: AppBar(
         title: const Text('Inventory'),
         actions: [
+          IconButton(
+            tooltip: 'Inventory risk',
+            onPressed: () {
+              context.push(
+                '/inventory-risk/${Uri.encodeComponent(widget.organizationId)}',
+              );
+            },
+            icon: const Icon(Icons.shield_outlined),
+          ),
           PopupMenuButton<String>(
             tooltip: 'Filter inventory',
             initialValue: _filter,
@@ -84,18 +106,12 @@ class _InventoryViewState extends State<_InventoryView> {
               });
             },
             itemBuilder: (context) => const [
-              PopupMenuItem<String>(
-                value: 'all',
-                child: Text('All items'),
-              ),
+              PopupMenuItem<String>(value: 'all', child: Text('All items')),
               PopupMenuItem<String>(
                 value: 'expiring',
                 child: Text('Expiring soon'),
               ),
-              PopupMenuItem<String>(
-                value: 'expired',
-                child: Text('Expired'),
-              ),
+              PopupMenuItem<String>(value: 'expired', child: Text('Expired')),
               PopupMenuItem<String>(
                 value: 'reorder',
                 child: Text('Needs reorder'),
@@ -120,23 +136,17 @@ class _InventoryViewState extends State<_InventoryView> {
               ),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return _buildErrorState(
-                    context,
-                    snapshot.error,
-                  );
+                  return _buildErrorState(context, snapshot.error);
                 }
 
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
+                  return const Center(child: CircularProgressIndicator());
                 }
 
                 final List<InventoryItem> items =
                     snapshot.data ?? const <InventoryItem>[];
 
-                final List<InventoryItem> filteredItems =
-                    _applyFilters(items);
+                final List<InventoryItem> filteredItems = _applyFilters(items);
 
                 if (items.isEmpty) {
                   return _buildEmptyState(context);
@@ -150,15 +160,9 @@ class _InventoryViewState extends State<_InventoryView> {
                   onRefresh: _refresh,
                   child: ListView.separated(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      100,
-                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                     itemCount: filteredItems.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: 10),
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final InventoryItem item = filteredItems[index];
 
@@ -166,8 +170,7 @@ class _InventoryViewState extends State<_InventoryView> {
                         item: item,
                         onEdit: () => _openEditInventory(item),
                         onDelete: () => _confirmDelete(item),
-                        onUpdateQuantity: () =>
-                            _showQuantityDialog(item),
+                        onUpdateQuantity: () => _showQuantityDialog(item),
                       );
                     },
                   ),
@@ -209,59 +212,55 @@ class _InventoryViewState extends State<_InventoryView> {
   }
 
   List<InventoryItem> _applyFilters(List<InventoryItem> items) {
-    return items.where((item) {
-      final bool matchesSearch = _searchQuery.isEmpty ||
-          item.name.toLowerCase().contains(_searchQuery) ||
-          item.category.toLowerCase().contains(_searchQuery);
+    return items
+        .where((item) {
+          final bool matchesSearch =
+              _searchQuery.isEmpty ||
+              item.name.toLowerCase().contains(_searchQuery) ||
+              item.category.toLowerCase().contains(_searchQuery);
 
-      if (!matchesSearch) {
-        return false;
-      }
+          if (!matchesSearch) {
+            return false;
+          }
 
-      switch (_filter) {
-        case 'expired':
-          return item.isExpired;
+          switch (_filter) {
+            case 'expired':
+              return item.isExpired;
 
-        case 'expiring':
-          final int? days = item.daysUntilExpiry;
-          return days != null && days >= 0 && days <= 7;
+            case 'expiring':
+              final int? days = item.daysUntilExpiry;
+              return days != null && days >= 0 && days <= 7;
 
-        case 'reorder':
-          return item.needsReorder;
+            case 'reorder':
+              return item.needsReorder;
 
-        case 'all':
-        default:
-          return true;
-      }
-    }).toList(growable: false);
+            case 'all':
+            default:
+              return true;
+          }
+        })
+        .toList(growable: false);
   }
 
   Future<void> _openAddInventory() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AddInventoryScreen(
-          organizationId: widget.organizationId,
-        ),
+        builder: (_) =>
+            AddInventoryScreen(organizationId: widget.organizationId),
       ),
     );
   }
 
   Future<void> _openEditInventory(InventoryItem item) async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => EditInventoryScreen(
-          item: item,
-        ),
-      ),
+      MaterialPageRoute<void>(builder: (_) => EditInventoryScreen(item: item)),
     );
   }
 
   Future<void> _refresh() async {
     // Firestore snapshots are already realtime. This delay simply provides
     // a small visual completion point for pull-to-refresh.
-    await Future<void>.delayed(
-      const Duration(milliseconds: 300),
-    );
+    await Future<void>.delayed(const Duration(milliseconds: 300));
   }
 
   Future<void> _showQuantityDialog(InventoryItem item) async {
@@ -283,8 +282,7 @@ class _InventoryViewState extends State<_InventoryView> {
                 return;
               }
 
-              final double quantity =
-                  double.parse(controller.text.trim());
+              final double quantity = double.parse(controller.text.trim());
 
               setDialogState(() {
                 saving = true;
@@ -307,9 +305,7 @@ class _InventoryViewState extends State<_InventoryView> {
 
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      _friendlyErrorMessage(error),
-                    ),
+                    content: Text(_friendlyErrorMessage(error)),
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
@@ -328,8 +324,7 @@ class _InventoryViewState extends State<_InventoryView> {
                   controller: controller,
                   enabled: !saving,
                   autofocus: true,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(
+                  keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: InputDecoration(
@@ -355,9 +350,7 @@ class _InventoryViewState extends State<_InventoryView> {
               ),
               actions: [
                 TextButton(
-                  onPressed: saving
-                      ? null
-                      : () => Navigator.of(context).pop(),
+                  onPressed: saving ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
@@ -366,9 +359,7 @@ class _InventoryViewState extends State<_InventoryView> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Text('Update'),
                 ),
@@ -417,6 +408,18 @@ class _InventoryViewState extends State<_InventoryView> {
     }
 
     try {
+      final String publicId = item.imagePublicId?.trim() ?? '';
+
+      if (publicId.isNotEmpty) {
+        await _cloudinaryService.deleteAsset(
+          organizationId: widget.organizationId,
+          mediaType: 'inventory',
+          entityId: item.id,
+          publicId: publicId,
+          resourceType: 'image',
+        );
+      }
+
       await _repository.deleteItem(
         organizationId: widget.organizationId,
         itemId: item.id,
@@ -424,15 +427,23 @@ class _InventoryViewState extends State<_InventoryView> {
 
       if (!mounted) return;
 
-      _showMessage('Inventory item deleted.');
+      _showMessage(
+        publicId.isEmpty
+            ? 'Inventory item deleted.'
+            : 'Inventory item and photo deleted.',
+      );
+    } on CloudinaryUploadException catch (error) {
+      if (!mounted) return;
+
+      debugPrint('Delete inventory Cloudinary error: $error');
+
+      _showMessage(error.message);
     } catch (error) {
       if (!mounted) return;
 
       debugPrint('Delete inventory error: $error');
 
-      _showMessage(
-        _friendlyErrorMessage(error),
-      );
+      _showMessage(_friendlyErrorMessage(error));
     }
   }
 
@@ -514,16 +525,12 @@ class _InventoryViewState extends State<_InventoryView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.search_off_rounded,
-              size: 56,
-            ),
+            const Icon(Icons.search_off_rounded, size: 56),
             const SizedBox(height: 12),
             Text(
               'No matching items',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -536,10 +543,7 @@ class _InventoryViewState extends State<_InventoryView> {
     );
   }
 
-  Widget _buildErrorState(
-    BuildContext context,
-    Object? error,
-  ) {
+  Widget _buildErrorState(BuildContext context, Object? error) {
     final String message = _friendlyErrorMessage(
       error ?? 'Unknown inventory error',
     );
@@ -550,15 +554,9 @@ class _InventoryViewState extends State<_InventoryView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline_rounded,
-              size: 56,
-            ),
+            const Icon(Icons.error_outline_rounded, size: 56),
             const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-            ),
+            Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: () => setState(() {}),
@@ -575,12 +573,40 @@ class _InventoryViewState extends State<_InventoryView> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
   }
+}
+
+void _showInventoryImage(BuildContext context, String imageUrl) {
+  showDialog<void>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+          child: InteractiveViewer(
+            minScale: 0.8,
+            maxScale: 4,
+            child: Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              errorBuilder:
+                  (BuildContext context, Object error, StackTrace? stackTrace) {
+                    return const SizedBox(
+                      height: 320,
+                      child: Center(
+                        child: Icon(Icons.broken_image_outlined, size: 48),
+                      ),
+                    );
+                  },
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class _InventoryCard extends StatelessWidget {
@@ -603,6 +629,8 @@ class _InventoryCard extends StatelessWidget {
 
     final String expiryText = _expiryText(item);
 
+    final String? imageUrl = item.imageUrl;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -612,9 +640,41 @@ class _InventoryCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  child: Icon(_categoryIcon(item.category)),
-                ),
+                if (imageUrl != null && imageUrl.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: InkWell(
+                      onTap: () => _showInventoryImage(context, imageUrl),
+                      borderRadius: BorderRadius.circular(10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          imageUrl,
+                          width: 58,
+                          height: 58,
+                          fit: BoxFit.cover,
+                          errorBuilder:
+                              (
+                                BuildContext context,
+                                Object error,
+                                StackTrace? stackTrace,
+                              ) {
+                                return Container(
+                                  width: 58,
+                                  height: 58,
+                                  color: colors.surfaceContainerHighest,
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.broken_image_outlined,
+                                  ),
+                                );
+                              },
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  CircleAvatar(child: Icon(_categoryIcon(item.category))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -687,8 +747,7 @@ class _InventoryCard extends StatelessWidget {
                   child: _InfoChip(
                     icon: Icons.scale_outlined,
                     label: 'Quantity',
-                    value:
-                        '${_formatQuantity(item.quantity)} ${item.unit}',
+                    value: '${_formatQuantity(item.quantity)} ${item.unit}',
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -708,7 +767,8 @@ class _InventoryCard extends StatelessWidget {
                     ? Icons.error_outline_rounded
                     : Icons.event_outlined,
                 text: expiryText,
-                isWarning: item.isExpired ||
+                isWarning:
+                    item.isExpired ||
                     (item.daysUntilExpiry != null &&
                         item.daysUntilExpiry! <= 7),
               ),
@@ -821,15 +881,9 @@ class _InfoChip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            size: 18,
-          ),
+          Icon(icon, size: 18),
           const SizedBox(height: 6),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall,
-          ),
+          Text(label, style: theme.textTheme.labelSmall),
           const SizedBox(height: 2),
           Text(
             value,
@@ -871,21 +925,14 @@ class _StatusBanner extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 10,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 19,
-            color: foreground,
-          ),
+          Icon(icon, size: 19, color: foreground),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

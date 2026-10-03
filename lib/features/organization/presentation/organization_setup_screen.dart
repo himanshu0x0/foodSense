@@ -35,8 +35,7 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _cityController = TextEditingController();
   final TextEditingController _stateController = TextEditingController();
-  final TextEditingController _peopleServedController =
-      TextEditingController();
+  final TextEditingController _peopleServedController = TextEditingController();
 
   final OrganizationRepository _organizationRepository =
       OrganizationRepository();
@@ -85,8 +84,8 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
     }
 
     try {
-      final OrganizationModel? existing =
-          await _organizationRepository.getMyOrganization();
+      final OrganizationModel? existing = await _organizationRepository
+          .getMyOrganization();
 
       if (existing != null) {
         _nameController.text = existing.name;
@@ -95,10 +94,9 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
         _stateController.text = existing.state;
         _peopleServedController.text = existing.peopleServed.toString();
 
-        _selectedOrganizationType =
-            _organizationTypes.contains(existing.type)
-                ? existing.type
-                : 'Other';
+        _selectedOrganizationType = _organizationTypes.contains(existing.type)
+            ? existing.type
+            : 'Other';
       }
     } on FirebaseException catch (error) {
       debugPrint(
@@ -107,19 +105,13 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
       );
 
       if (mounted) {
-        _showMessage(
-          _firebaseErrorMessage(error),
-          isError: true,
-        );
+        _showMessage(_firebaseErrorMessage(error), isError: true);
       }
     } catch (error) {
       debugPrint('Load organization error: $error');
 
       if (mounted) {
-        _showMessage(
-          'Unable to load organization details.',
-          isError: true,
-        );
+        _showMessage('Unable to load organization details.', isError: true);
       }
     } finally {
       if (mounted) {
@@ -146,24 +138,17 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
       return;
     }
 
-    final int? peopleServed =
-        int.tryParse(_peopleServedController.text.trim());
+    final int? peopleServed = int.tryParse(_peopleServedController.text.trim());
 
     if (peopleServed == null || peopleServed < 0) {
-      _showMessage(
-        'Enter a valid number of people served.',
-        isError: true,
-      );
+      _showMessage('Enter a valid number of people served.', isError: true);
       return;
     }
 
     final String? organizationType = _selectedOrganizationType;
 
     if (organizationType == null || organizationType.isEmpty) {
-      _showMessage(
-        'Please select an organization type.',
-        isError: true,
-      );
+      _showMessage('Please select an organization type.', isError: true);
       return;
     }
 
@@ -172,14 +157,13 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
     });
 
     try {
-      final OrganizationModel? existing =
-          await _organizationRepository.getMyOrganization();
+      final OrganizationModel? existing = await _organizationRepository
+          .getMyOrganization();
 
       late final OrganizationModel organization;
 
       if (existing == null) {
-        organization =
-            await _organizationRepository.createOrganization(
+        organization = await _organizationRepository.createOrganization(
           name: _nameController.text,
           type: organizationType,
           address: _addressController.text,
@@ -199,15 +183,14 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
           peopleServed: peopleServed,
         );
 
-        await _organizationRepository.updateOrganization(
-          organization,
-        );
+        await _organizationRepository.updateOrganization(organization);
       }
 
       // Keep the relationship explicit and small:
       // users/{uid}.organizationId -> organizations/{organizationId}
-      final UserModel? userProfile =
-          await _authRepository.getUserProfile(currentUser.uid);
+      final UserModel? userProfile = await _authRepository.getUserProfile(
+        currentUser.uid,
+      );
 
       if (userProfile == null) {
         // This should normally never happen because registration creates the
@@ -218,9 +201,7 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
       }
 
       await _authRepository.updateUserProfile(
-        userProfile.copyWith(
-          organizationId: organization.id,
-        ),
+        userProfile.copyWith(organizationId: organization.id),
       );
 
       if (!mounted) {
@@ -247,28 +228,19 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
         '${error.code} ${error.message}',
       );
 
-      _showMessage(
-        _firebaseErrorMessage(error),
-        isError: true,
-      );
+      _showMessage(_firebaseErrorMessage(error), isError: true);
     } on ArgumentError catch (error) {
       if (!mounted) {
         return;
       }
 
-      _showMessage(
-        error.message.toString(),
-        isError: true,
-      );
+      _showMessage(error.message.toString(), isError: true);
     } on StateError catch (error) {
       if (!mounted) {
         return;
       }
 
-      _showMessage(
-        error.message,
-        isError: true,
-      );
+      _showMessage(error.message, isError: true);
     } catch (error) {
       if (!mounted) {
         return;
@@ -306,15 +278,11 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
       case 'already-exists':
         return 'This organization record already exists.';
       default:
-        return error.message ??
-            'Firebase could not complete this operation.';
+        return error.message ?? 'Firebase could not complete this operation.';
     }
   }
 
-  String? _requiredValidator(
-    String? value, {
-    required String fieldName,
-  }) {
+  String? _requiredValidator(String? value, {required String fieldName}) {
     if (value == null || value.trim().isEmpty) {
       return '$fieldName is required.';
     }
@@ -338,10 +306,7 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
     return null;
   }
 
-  void _showMessage(
-    String message, {
-    required bool isError,
-  }) {
+  void _showMessage(String message, {required bool isError}) {
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     ScaffoldMessenger.of(context)
@@ -355,17 +320,13 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
       );
   }
 
-  Widget _buildSectionTitle(
-    BuildContext context,
-    String title,
-  ) {
+  Widget _buildSectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+        style: Theme.of(context).textTheme.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -375,26 +336,19 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Organization Setup'),
-      ),
+      appBar: AppBar(title: const Text('Organization Setup')),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : SafeArea(
               child: Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: 560,
-                    ),
+                    constraints: const BoxConstraints(maxWidth: 560),
                     child: Form(
                       key: _formKey,
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.stretch,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Icon(
                             Icons.business_rounded,
@@ -405,8 +359,7 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                           Text(
                             'Set up your organization',
                             textAlign: TextAlign.center,
-                            style: theme.textTheme.headlineSmall
-                                ?.copyWith(
+                            style: theme.textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -420,27 +373,19 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                           ),
                           const SizedBox(height: 28),
 
-                          _buildSectionTitle(
-                            context,
-                            'Organization details',
-                          ),
+                          _buildSectionTitle(context, 'Organization details'),
 
                           TextFormField(
                             controller: _nameController,
                             enabled: !_isSaving,
-                            textCapitalization:
-                                TextCapitalization.words,
-                            textInputAction:
-                                TextInputAction.next,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'Organization name',
                               hintText: 'e.g. ABC College',
-                              prefixIcon: Icon(
-                                Icons.business_outlined,
-                              ),
+                              prefixIcon: Icon(Icons.business_outlined),
                             ),
-                            validator: (value) =>
-                                _requiredValidator(
+                            validator: (value) => _requiredValidator(
                               value,
                               fieldName: 'Organization name',
                             ),
@@ -451,14 +396,11 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                             value: _selectedOrganizationType,
                             decoration: const InputDecoration(
                               labelText: 'Organization type',
-                              prefixIcon: Icon(
-                                Icons.category_outlined,
-                              ),
+                              prefixIcon: Icon(Icons.category_outlined),
                             ),
                             items: _organizationTypes
                                 .map(
-                                  (type) =>
-                                      DropdownMenuItem<String>(
+                                  (type) => DropdownMenuItem<String>(
                                     value: type,
                                     child: Text(type),
                                   ),
@@ -468,13 +410,11 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                                 ? null
                                 : (value) {
                                     setState(() {
-                                      _selectedOrganizationType =
-                                          value;
+                                      _selectedOrganizationType = value;
                                     });
                                   },
                             validator: (value) {
-                              if (value == null ||
-                                  value.isEmpty) {
+                              if (value == null || value.isEmpty) {
                                 return 'Organization type is required.';
                               }
 
@@ -483,84 +423,56 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                           ),
                           const SizedBox(height: 24),
 
-                          _buildSectionTitle(
-                            context,
-                            'Location',
-                          ),
+                          _buildSectionTitle(context, 'Location'),
 
                           TextFormField(
                             controller: _addressController,
                             enabled: !_isSaving,
-                            textCapitalization:
-                                TextCapitalization.sentences,
-                            textInputAction:
-                                TextInputAction.next,
+                            textCapitalization: TextCapitalization.sentences,
+                            textInputAction: TextInputAction.next,
                             maxLines: 2,
                             decoration: const InputDecoration(
                               labelText: 'Address',
-                              hintText:
-                                  'Enter organization address',
-                              prefixIcon: Icon(
-                                Icons.location_on_outlined,
-                              ),
+                              hintText: 'Enter organization address',
+                              prefixIcon: Icon(Icons.location_on_outlined),
                               alignLabelWithHint: true,
                             ),
                             validator: (value) =>
-                                _requiredValidator(
-                              value,
-                              fieldName: 'Address',
-                            ),
+                                _requiredValidator(value, fieldName: 'Address'),
                           ),
                           const SizedBox(height: 16),
 
                           TextFormField(
                             controller: _cityController,
                             enabled: !_isSaving,
-                            textCapitalization:
-                                TextCapitalization.words,
-                            textInputAction:
-                                TextInputAction.next,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'City',
                               hintText: 'e.g. Meerut',
-                              prefixIcon: Icon(
-                                Icons.location_city_outlined,
-                              ),
+                              prefixIcon: Icon(Icons.location_city_outlined),
                             ),
                             validator: (value) =>
-                                _requiredValidator(
-                              value,
-                              fieldName: 'City',
-                            ),
+                                _requiredValidator(value, fieldName: 'City'),
                           ),
                           const SizedBox(height: 16),
 
                           TextFormField(
                             controller: _stateController,
                             enabled: !_isSaving,
-                            textCapitalization:
-                                TextCapitalization.words,
-                            textInputAction:
-                                TextInputAction.next,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'State',
                               hintText: 'e.g. Uttar Pradesh',
-                              prefixIcon: Icon(
-                                Icons.map_outlined,
-                              ),
+                              prefixIcon: Icon(Icons.map_outlined),
                             ),
                             validator: (value) =>
-                                _requiredValidator(
-                              value,
-                              fieldName: 'State',
-                            ),
+                                _requiredValidator(value, fieldName: 'State'),
                           ),
                           const SizedBox(height: 24),
 
-                          _buildSectionTitle(
-                            context,
-                            'Kitchen capacity',
-                          ),
+                          _buildSectionTitle(context, 'Kitchen capacity'),
 
                           TextFormField(
                             controller: _peopleServedController,
@@ -570,9 +482,7 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                             decoration: const InputDecoration(
                               labelText: 'People served per day',
                               hintText: 'e.g. 1000',
-                              prefixIcon: Icon(
-                                Icons.groups_outlined,
-                              ),
+                              prefixIcon: Icon(Icons.groups_outlined),
                               suffixText: 'people',
                             ),
                             validator: _peopleValidator,
@@ -580,14 +490,12 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                           const SizedBox(height: 28),
 
                           ElevatedButton(
-                            onPressed:
-                                _isSaving ? null : _saveOrganization,
+                            onPressed: _isSaving ? null : _saveOrganization,
                             child: _isSaving
                                 ? const SizedBox(
                                     height: 22,
                                     width: 22,
-                                    child:
-                                        CircularProgressIndicator(
+                                    child: CircularProgressIndicator(
                                       strokeWidth: 2.5,
                                     ),
                                   )
@@ -610,9 +518,7 @@ class _OrganizationSetupScreenState extends State<OrganizationSetupScreen> {
                             'separately.',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],

@@ -25,6 +25,8 @@ class InventoryItem {
   final String? supplierName;
   final double? unitCost;
   final int? reorderLevel;
+  final String? imageUrl;
+  final String? imagePublicId;
 
   const InventoryItem({
     required this.id,
@@ -39,6 +41,8 @@ class InventoryItem {
     this.supplierName,
     this.unitCost,
     this.reorderLevel,
+    this.imageUrl,
+    this.imagePublicId,
   });
 
   /// Creates an [InventoryItem] from a Firestore document/map.
@@ -56,6 +60,8 @@ class InventoryItem {
       supplierName: _readNullableString(map['supplierName']),
       unitCost: _readNullableDouble(map['unitCost']),
       reorderLevel: _readNullableInt(map['reorderLevel']),
+      imageUrl: _readNullableString(map['imageUrl']),
+      imagePublicId: _readNullableString(map['imagePublicId']),
     );
   }
 
@@ -78,6 +84,10 @@ class InventoryItem {
         'supplierName': supplierName!.trim(),
       if (unitCost != null) 'unitCost': unitCost,
       if (reorderLevel != null) 'reorderLevel': reorderLevel,
+      if (imageUrl != null && imageUrl!.trim().isNotEmpty)
+        'imageUrl': imageUrl!.trim(),
+      if (imagePublicId != null && imagePublicId!.trim().isNotEmpty)
+        'imagePublicId': imagePublicId!.trim(),
     };
   }
 
@@ -95,6 +105,8 @@ class InventoryItem {
     String? supplierName,
     double? unitCost,
     int? reorderLevel,
+    String? imageUrl,
+    String? imagePublicId,
   }) {
     return InventoryItem(
       id: id ?? this.id,
@@ -109,10 +121,15 @@ class InventoryItem {
       supplierName: supplierName ?? this.supplierName,
       unitCost: unitCost ?? this.unitCost,
       reorderLevel: reorderLevel ?? this.reorderLevel,
+      imageUrl: imageUrl ?? this.imageUrl,
+      imagePublicId: imagePublicId ?? this.imagePublicId,
     );
   }
 
   /// Whether this item has an expiry date.
+  /// Whether a Cloudinary food/inventory photo is linked.
+  bool get hasImage => imageUrl != null && imageUrl!.trim().isNotEmpty;
+
   bool get hasExpiryDate => expiryDate != null;
 
   /// Whether the item is already expired.
@@ -270,22 +287,26 @@ class InventoryItem {
         other.storageType == storageType &&
         other.supplierName == supplierName &&
         other.unitCost == unitCost &&
-        other.reorderLevel == reorderLevel;
+        other.reorderLevel == reorderLevel &&
+        other.imageUrl == imageUrl &&
+        other.imagePublicId == imagePublicId;
   }
 
   @override
   int get hashCode => Object.hash(
-        id,
-        organizationId,
-        name,
-        category,
-        quantity,
-        unit,
-        purchaseDate,
-        expiryDate,
-        storageType,
-        supplierName,
-        unitCost,
-        reorderLevel,
-      );
+    id,
+    organizationId,
+    name,
+    category,
+    quantity,
+    unit,
+    purchaseDate,
+    expiryDate,
+    storageType,
+    supplierName,
+    unitCost,
+    reorderLevel,
+    imageUrl,
+    imagePublicId,
+  );
 }

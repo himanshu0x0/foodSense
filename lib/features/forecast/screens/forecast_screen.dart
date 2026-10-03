@@ -11,10 +11,7 @@ import 'package:foodsense/features/forecast/providers/forecast_provider.dart';
 /// organization selection/ownership stays in the existing FoodSense app state
 /// rather than being duplicated inside the forecasting feature.
 class ForecastScreen extends ConsumerStatefulWidget {
-  const ForecastScreen({
-    required this.organizationId,
-    super.key,
-  });
+  const ForecastScreen({required this.organizationId, super.key});
 
   final String organizationId;
 
@@ -54,9 +51,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Demand Forecast'),
-      ),
+      appBar: AppBar(title: const Text('Demand Forecast')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -132,18 +127,19 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.restaurant_outlined),
               ),
-              items: const <String>[
-                'Breakfast',
-                'Lunch',
-                'Dinner',
-                'Snack',
-                'Other',
-              ].map((String meal) {
-                return DropdownMenuItem<String>(
-                  value: meal,
-                  child: Text(meal),
-                );
-              }).toList(),
+              items:
+                  const <String>[
+                    'Breakfast',
+                    'Lunch',
+                    'Dinner',
+                    'Snack',
+                    'Other',
+                  ].map((String meal) {
+                    return DropdownMenuItem<String>(
+                      value: meal,
+                      child: Text(meal),
+                    );
+                  }).toList(),
               onChanged: (String? value) {
                 if (value != null) {
                   setState(() {
@@ -285,10 +281,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
           ),
         );
       },
-      data: (ForecastModel forecast) => _buildResultCard(
-        theme,
-        forecast,
-      ),
+      data: (ForecastModel forecast) => _buildResultCard(theme, forecast),
     );
   }
 
@@ -306,10 +299,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    Icon(
-                      Icons.auto_graph,
-                      color: theme.colorScheme.primary,
-                    ),
+                    Icon(Icons.auto_graph, color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -343,8 +333,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
                 _MetricTile(
                   label: 'Safety buffer',
                   value: '${forecast.safetyBuffer}',
-                  unit:
-                      '${forecast.safetyBufferPercent.toStringAsFixed(1)}%',
+                  unit: '${forecast.safetyBufferPercent.toStringAsFixed(1)}%',
                   icon: Icons.shield_outlined,
                 ),
                 const SizedBox(height: 10),
@@ -417,11 +406,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
 
   Future<void> _pickDate() async {
     final DateTime today = DateTime.now();
-    final DateTime todayOnly = DateTime(
-      today.year,
-      today.month,
-      today.day,
-    );
+    final DateTime todayOnly = DateTime(today.year, today.month, today.day);
 
     final DateTime initialDate = _forecastDate.isBefore(todayOnly)
         ? todayOnly
@@ -442,9 +427,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
   }
 
   void _requestForecast() {
-    final int? expectedPeople = int.tryParse(
-      _peopleController.text.trim(),
-    );
+    final int? expectedPeople = int.tryParse(_peopleController.text.trim());
 
     if (expectedPeople == null || expectedPeople < 0) {
       _showMessage('Enter a valid non-negative number of people.');
@@ -452,11 +435,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
     }
 
     final DateTime today = DateTime.now();
-    final DateTime todayOnly = DateTime(
-      today.year,
-      today.month,
-      today.day,
-    );
+    final DateTime todayOnly = DateTime(today.year, today.month, today.day);
 
     if (_forecastDate.isBefore(todayOnly)) {
       _showMessage(
@@ -488,9 +467,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _friendlyError(Object error) {
@@ -520,10 +497,7 @@ class _ForecastScreenState extends ConsumerState<ForecastScreen> {
         .replaceAll('_', ' ')
         .split(' ')
         .where((String part) => part.isNotEmpty)
-        .map(
-          (String part) =>
-              '${part[0].toUpperCase()}${part.substring(1)}',
-        )
+        .map((String part) => '${part[0].toUpperCase()}${part.substring(1)}')
         .join(' ');
   }
 }
@@ -549,9 +523,7 @@ class _MetricTile extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: theme.dividerColor,
-        ),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Row(
         children: <Widget>[
@@ -572,10 +544,7 @@ class _MetricTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Text(
-            unit,
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(unit, style: theme.textTheme.bodySmall),
         ],
       ),
     );
@@ -583,10 +552,7 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-  });
+  const _DetailRow({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -598,18 +564,14 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
           ),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -619,10 +581,7 @@ class _DetailRow extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.icon,
-  });
+  const _StatusChip({required this.label, required this.icon});
 
   final String label;
   final IconData icon;

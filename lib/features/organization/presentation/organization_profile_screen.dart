@@ -17,8 +17,7 @@ class OrganizationProfileScreen extends StatefulWidget {
       _OrganizationProfileScreenState();
 }
 
-class _OrganizationProfileScreenState
-    extends State<OrganizationProfileScreen> {
+class _OrganizationProfileScreenState extends State<OrganizationProfileScreen> {
   final OrganizationRepository _organizationRepository =
       OrganizationRepository();
 
@@ -33,8 +32,8 @@ class _OrganizationProfileScreenState
 
   Future<void> _loadOrganization() async {
     try {
-      final OrganizationModel? organization =
-          await _organizationRepository.getMyOrganization();
+      final OrganizationModel? organization = await _organizationRepository
+          .getMyOrganization();
 
       if (!mounted) return;
 
@@ -51,9 +50,7 @@ class _OrganizationProfileScreenState
         _isLoading = false;
       });
 
-      _showMessage(
-        'Unable to load organization details. Please try again.',
-      );
+      _showMessage('Unable to load organization details. Please try again.');
     }
   }
 
@@ -90,10 +87,7 @@ class _OrganizationProfileScreenState
                 color: colors.primaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                icon,
-                color: colors.onPrimaryContainer,
-              ),
+              child: Icon(icon, color: colors.onPrimaryContainer),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -126,10 +120,7 @@ class _OrganizationProfileScreenState
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
       );
   }
 
@@ -149,169 +140,156 @@ class _OrganizationProfileScreenState
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _organization == null
-              ? RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(24),
-                    children: [
-                      const SizedBox(height: 80),
-                      Icon(
-                        Icons.business_outlined,
-                        size: 72,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'No organization found',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Set up your organization before recording '
-                        'food-operation data.',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _editOrganization,
-                        icon: const Icon(Icons.add_business_outlined),
-                        label: const Text('Set Up Organization'),
-                      ),
-                    ],
+          ? RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(24),
+                children: [
+                  const SizedBox(height: 80),
+                  Icon(
+                    Icons.business_outlined,
+                    size: 72,
+                    color: theme.colorScheme.primary,
                   ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
+                  const SizedBox(height: 20),
+                  Text(
+                    'No organization found',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Set up your organization before recording '
+                    'food-operation data.',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _editOrganization,
+                    icon: const Icon(Icons.add_business_outlined),
+                    label: const Text('Set Up Organization'),
+                  ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                children: [
+                  Container(
                     padding: const EdgeInsets.all(20),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(20),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: theme.colorScheme.primary,
+                          child: Icon(
+                            Icons.business_rounded,
+                            size: 32,
+                            color: theme.colorScheme.onPrimary,
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 30,
-                              backgroundColor:
-                                  theme.colorScheme.primary,
-                              child: Icon(
-                                Icons.business_rounded,
-                                size: 32,
-                                color:
-                                    theme.colorScheme.onPrimary,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _organization!.name,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _organization!.name,
-                                    style: theme
-                                        .textTheme
-                                        .titleLarge
-                                        ?.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          color: theme.colorScheme
-                                              .onPrimaryContainer,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _organization!.type,
-                                    style: theme
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(
-                                          color: theme.colorScheme
-                                              .onPrimaryContainer,
-                                        ),
-                                  ),
-                                ],
+                              const SizedBox(height: 4),
+                              Text(
+                                _organization!.type,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Organization details',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoCard(
-                        icon: Icons.business_outlined,
-                        title: 'Organization name',
-                        value: _organization!.name,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.category_outlined,
-                        title: 'Organization type',
-                        value: _organization!.type,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.location_on_outlined,
-                        title: 'Address',
-                        value: _organization!.address,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.location_city_outlined,
-                        title: 'City',
-                        value: _organization!.city,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.map_outlined,
-                        title: 'State',
-                        value: _organization!.state,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.public_outlined,
-                        title: 'Country',
-                        value: _organization!.country,
-                      ),
-                      const SizedBox(height: 10),
-                      _buildInfoCard(
-                        icon: Icons.groups_outlined,
-                        title: 'People served per day',
-                        value: _organization!.peopleServed.toString(),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _editOrganization,
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('Edit Organization'),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => context.pop(),
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        label: const Text('Back'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Organization details',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                    icon: Icons.business_outlined,
+                    title: 'Organization name',
+                    value: _organization!.name,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoCard(
+                    icon: Icons.category_outlined,
+                    title: 'Organization type',
+                    value: _organization!.type,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoCard(
+                    icon: Icons.location_on_outlined,
+                    title: 'Address',
+                    value: _organization!.address,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoCard(
+                    icon: Icons.location_city_outlined,
+                    title: 'City',
+                    value: _organization!.city,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoCard(
+                    icon: Icons.map_outlined,
+                    title: 'State',
+                    value: _organization!.state,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoCard(
+                    icon: Icons.public_outlined,
+                    title: 'Country',
+                    value: _organization!.country,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInfoCard(
+                    icon: Icons.groups_outlined,
+                    title: 'People served per day',
+                    value: _organization!.peopleServed.toString(),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _editOrganization,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit Organization'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    label: const Text('Back'),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

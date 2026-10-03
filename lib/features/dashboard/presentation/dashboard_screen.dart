@@ -9,8 +9,9 @@ import 'package:go_router/go_router.dart';
 /// - Current user and organization overview
 /// - Daily food-operation overview
 /// - Phase 1 operational navigation
-/// - Phase 2 AI navigation for demand forecasting, surplus prediction,
-///   and waste analysis
+/// - Inventory risk and operational recommendations
+/// - Phase 2 AI navigation
+/// - Redistribution and delivery-network navigation
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -57,14 +58,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final Map<String, dynamic> userData = userSnapshot.data() ?? {};
 
       final dynamic storedNameValue = userData['name'];
-      final String storedName =
-          storedNameValue is String ? storedNameValue : '';
+      final String storedName = storedNameValue is String
+          ? storedNameValue
+          : '';
 
       _userName = storedName.trim().isNotEmpty
           ? storedName.trim()
           : (user.displayName?.trim().isNotEmpty == true
-              ? user.displayName!.trim()
-              : 'User');
+                ? user.displayName!.trim()
+                : 'User');
 
       final dynamic organizationIdValue = userData['organizationId'];
       _organizationId = organizationIdValue is String
@@ -82,10 +84,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             organizationSnapshot.data() ?? {};
 
         final dynamic organizationNameValue = organizationData['name'];
-        final String storedOrganizationName =
-            organizationNameValue is String
-                ? organizationNameValue
-                : '';
+        final String storedOrganizationName = organizationNameValue is String
+            ? organizationNameValue
+            : '';
 
         _organizationName = storedOrganizationName.trim().isNotEmpty
             ? storedOrganizationName.trim()
@@ -99,9 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         await _loadTodayFoodRecord();
       }
     } on FirebaseException catch (error) {
-      debugPrint(
-        'Dashboard Firebase error: ${error.code} ${error.message}',
-      );
+      debugPrint('Dashboard Firebase error: ${error.code} ${error.message}');
     } catch (error) {
       debugPrint('Dashboard error: $error');
     } finally {
@@ -131,10 +130,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'recordDate',
             isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
           )
-          .where(
-            'recordDate',
-            isLessThan: Timestamp.fromDate(endOfDay),
-          )
+          .where('recordDate', isLessThan: Timestamp.fromDate(endOfDay))
           .orderBy('recordDate', descending: true)
           .limit(1)
           .get();
@@ -229,9 +225,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    context.push(
-      '/inventory/${Uri.encodeComponent(_organizationId)}',
-    );
+    context.push('/inventory/${Uri.encodeComponent(_organizationId)}');
+  }
+
+  void _openInventoryRisk() {
+    if (_organizationId.isEmpty) {
+      context.push('/organization/setup');
+      return;
+    }
+
+    context.push('/inventory-risk/${Uri.encodeComponent(_organizationId)}');
+  }
+
+  void _openRecommendations() {
+    if (_organizationId.isEmpty) {
+      context.push('/organization/setup');
+      return;
+    }
+
+    context.push('/recommendations/${Uri.encodeComponent(_organizationId)}');
   }
 
   void _openDailyFoodRecord() {
@@ -240,9 +252,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    context.push(
-      '/food-records/daily/${Uri.encodeComponent(_organizationId)}',
-    );
+    context.push('/food-records/daily/${Uri.encodeComponent(_organizationId)}');
   }
 
   void _openRecordHistory() {
@@ -256,15 +266,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  void _openAiHub() {
+    if (_organizationId.isEmpty) {
+      context.push('/organization/setup');
+      return;
+    }
+
+    context.push('/ai/${Uri.encodeComponent(_organizationId)}');
+  }
+
   void _openForecast() {
     if (_organizationId.isEmpty) {
       context.push('/organization/setup');
       return;
     }
 
-    context.push(
-      '/forecast/${Uri.encodeComponent(_organizationId)}',
-    );
+    context.push('/forecast/${Uri.encodeComponent(_organizationId)}');
   }
 
   void _openSurplus() {
@@ -273,9 +290,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
-    context.push(
-      '/surplus/${Uri.encodeComponent(_organizationId)}',
-    );
+    context.push('/surplus/${Uri.encodeComponent(_organizationId)}');
   }
 
   void _openWasteAnalysis() {
@@ -284,8 +299,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
 
+    context.push('/waste/${Uri.encodeComponent(_organizationId)}');
+  }
+
+  void _openSurplusScenarios() {
+    if (_organizationId.isEmpty) {
+      context.push('/organization/setup');
+      return;
+    }
+
+    context.push('/surplus-scenarios/${Uri.encodeComponent(_organizationId)}');
+  }
+
+  void _openDeliveryNetwork() {
+    if (_organizationId.isEmpty) {
+      context.push('/organization/setup');
+      return;
+    }
+
     context.push(
-      '/waste/${Uri.encodeComponent(_organizationId)}',
+      '/redistribution-network/${Uri.encodeComponent(_organizationId)}',
     );
   }
 
@@ -302,7 +335,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
-          children: [
+          children: <Widget>[
             Container(
               width: 44,
               height: 44,
@@ -310,16 +343,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: colors.primaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                icon,
-                color: colors.onPrimaryContainer,
-              ),
+              child: Icon(icon, color: colors.onPrimaryContainer),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                children: <Widget>[
                   Text(
                     label,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -364,16 +394,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                child: Icon(icon),
-              ),
+            children: <Widget>[
+              CircleAvatar(radius: 24, child: Icon(icon)),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                  children: <Widget>[
                     Text(
                       title,
                       style: theme.textTheme.titleMedium?.copyWith(
@@ -381,10 +408,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    Text(subtitle, style: theme.textTheme.bodySmall),
                   ],
                 ),
               ),
@@ -403,7 +427,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('FoodSense'),
-        actions: [
+        actions: <Widget>[
           IconButton(
             tooltip: 'Refresh',
             onPressed: _isLoading ? null : _refresh,
@@ -415,7 +439,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 _signOut();
               }
             },
-            itemBuilder: (context) => const [
+            itemBuilder: (context) => const <PopupMenuEntry<String>>[
               PopupMenuItem<String>(
                 value: 'logout',
                 child: ListTile(
@@ -429,15 +453,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _refresh,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(20),
-                children: [
+                children: <Widget>[
                   Text(
                     'Hello, $_userName',
                     style: theme.textTheme.headlineSmall?.copyWith(
@@ -445,11 +467,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    _organizationName,
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  if (_organizationType.isNotEmpty) ...[
+                  Text(_organizationName, style: theme.textTheme.bodyLarge),
+                  if (_organizationType.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 4),
                     Text(
                       _organizationType.toUpperCase(),
@@ -497,6 +516,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     suffix: 'kg',
                   ),
                   const SizedBox(height: 28),
+
+                  // Phase 1.
                   Text(
                     'Phase 1',
                     style: theme.textTheme.titleLarge?.copyWith(
@@ -523,6 +544,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 10),
                   _buildQuickAction(
+                    icon: Icons.shield_outlined,
+                    title: 'Inventory Risk',
+                    subtitle: _organizationId.isEmpty
+                        ? 'Set up your organization first'
+                        : 'See expiry and stock items needing attention',
+                    onTap: _openInventoryRisk,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildQuickAction(
+                    icon: Icons.auto_awesome_rounded,
+                    title: 'Recommendations',
+                    subtitle: _organizationId.isEmpty
+                        ? 'Set up your organization first'
+                        : 'Get clear actions from current inventory risks',
+                    onTap: _openRecommendations,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildQuickAction(
                     icon: Icons.edit_note_rounded,
                     title: 'Daily food record',
                     subtitle: 'Record preparation, consumption and waste',
@@ -536,6 +575,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     onTap: _openRecordHistory,
                   ),
                   const SizedBox(height: 28),
+
+                  // Phase 2 AI.
                   Text(
                     'Phase 2 AI',
                     style: theme.textTheme.titleLarge?.copyWith(
@@ -549,6 +590,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
+                  _buildQuickAction(
+                    icon: Icons.auto_awesome_rounded,
+                    title: 'FoodSense AI',
+                    subtitle: _organizationId.isEmpty
+                        ? 'Set up your organization first'
+                        : 'Forecast demand, compare production, and analyze waste',
+                    onTap: _openAiHub,
+                  ),
+                  const SizedBox(height: 10),
                   _buildQuickAction(
                     icon: Icons.auto_graph_rounded,
                     title: 'Demand forecast',
@@ -568,12 +618,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 10),
                   _buildQuickAction(
+                    icon: Icons.compare_arrows_rounded,
+                    title: 'Scenario comparison',
+                    subtitle: _organizationId.isEmpty
+                        ? 'Set up your organization first'
+                        : 'Compare multiple production quantities',
+                    onTap: _openSurplusScenarios,
+                  ),
+                  const SizedBox(height: 10),
+                  _buildQuickAction(
                     icon: Icons.analytics_outlined,
                     title: 'Waste analysis',
                     subtitle: _organizationId.isEmpty
                         ? 'Set up your organization first'
                         : 'Analyze historical waste and trends',
                     onTap: _openWasteAnalysis,
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Redistribution / logistics.
+                  Text(
+                    'Redistribution & Logistics',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Connect surplus food to NGOs with delivery-partner '
+                    'assignment, traffic-aware routing, ETA and live trip monitoring.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildQuickAction(
+                    icon: Icons.local_shipping_outlined,
+                    title: 'Delivery Network',
+                    subtitle: _organizationId.isEmpty
+                        ? 'Set up your organization first'
+                        : 'Manage surplus deliveries, routes, ETA and live tracking',
+                    onTap: _openDeliveryNetwork,
                   ),
                 ],
               ),

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/network/cloudinary_upload_service.dart';
 import '../data/food_record_repository.dart';
 import '../models/daily_food_record.dart';
 
@@ -18,10 +19,7 @@ import '../models/daily_food_record.dart';
 /// - Summary metrics
 /// - Edit and delete actions
 class RecordHistoryScreen extends StatefulWidget {
-  const RecordHistoryScreen({
-    super.key,
-    required this.organizationId,
-  });
+  const RecordHistoryScreen({super.key, required this.organizationId});
 
   final String organizationId;
 
@@ -29,15 +27,34 @@ class RecordHistoryScreen extends StatefulWidget {
   State<RecordHistoryScreen> createState() => _RecordHistoryScreenState();
 }
 
+/// FastAPI URL used for authenticated Cloudinary operations.
+///
+/// Android emulator:
+/// --dart-define=FOODSENSE_API_BASE_URL=http://10.0.2.2:8000
+const String foodSenseApiBaseUrl = String.fromEnvironment(
+  'FOODSENSE_API_BASE_URL',
+  defaultValue: 'http://127.0.0.1:8000',
+);
+
 class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
   final FoodRecordRepository _repository = FoodRecordRepository();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _searchController = TextEditingController();
+  late final CloudinaryUploadService _cloudinaryService;
 
   String _searchQuery = '';
   String _selectedMealType = 'All';
   DateTimeRange? _selectedDateRange;
   bool _isDeleting = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _cloudinaryService = CloudinaryUploadService(
+      backendBaseUrl: foodSenseApiBaseUrl,
+    );
+  }
 
   static const List<String> _mealTypes = <String>[
     'All',
@@ -51,6 +68,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _cloudinaryService.dispose();
     super.dispose();
   }
 
@@ -65,18 +83,17 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
   }
 
   bool _matchesFilters(DailyFoodRecord record) {
-    if (_selectedMealType != 'All' &&
-        record.mealType != _selectedMealType) {
+    if (_selectedMealType != 'All' && record.mealType != _selectedMealType) {
       return false;
     }
 
     if (_searchQuery.isNotEmpty) {
       final String query = _searchQuery.toLowerCase();
 
-      final bool matchesMenu =
-          record.menu.toLowerCase().contains(query);
-      final bool matchesMealType =
-          record.mealType.toLowerCase().contains(query);
+      final bool matchesMenu = record.menu.toLowerCase().contains(query);
+      final bool matchesMealType = record.mealType.toLowerCase().contains(
+        query,
+      );
 
       if (!matchesMenu && !matchesMealType) {
         return false;
@@ -105,7 +122,8 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
       context: context,
       firstDate: DateTime(now.year - 5),
       lastDate: DateTime(now.year + 1),
-      initialDateRange: _selectedDateRange ??
+      initialDateRange:
+          _selectedDateRange ??
           DateTimeRange(
             start: DateTime(now.year, now.month, now.day),
             end: DateTime(now.year, now.month, now.day),
@@ -164,8 +182,9 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
   }
 
   Future<void> _editRecord(DailyFoodRecord record) async {
-    final String encodedOrganizationId =
-        Uri.encodeComponent(widget.organizationId);
+    final String encodedOrganizationId = Uri.encodeComponent(
+      widget.organizationId,
+    );
     final String encodedRecordId = Uri.encodeComponent(record.id);
 
     await context.push(
@@ -215,6 +234,23 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
     });
 
     try {
+      final String publicId = record.imagePublicId?.trim() ?? '';
+
+      // Delete the Cloudinary asset while its Firestore reference still
+      // exists. The backend validates that this public ID belongs to the
+      // selected FoodSense record before deleting it.
+      if (publicId.isNotEmpty) {
+        await _cloudinaryService.deleteAsset(
+          organizationId: widget.organizationId,
+          mediaType: 'food_records',
+          entityId: record.id,
+          publicId: publicId,
+          resourceType: 'image',
+        );
+      }
+
+      // Remove the Firestore record only after the linked media has been
+      // handled.
       await _repository.deleteRecord(
         organizationId: widget.organizationId,
         recordId: record.id,
@@ -225,27 +261,31 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
       }
 
       _showMessage(
-        'Food record deleted successfully.',
+        publicId.isEmpty
+            ? 'Food record deleted successfully.'
+            : 'Food record and photo deleted successfully.',
         isError: false,
       );
+    } on CloudinaryUploadException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      debugPrint('Delete food record Cloudinary error: $error');
+
+      _showMessage(error.message, isError: true);
     } on FirebaseAuthException catch (error) {
       if (!mounted) {
         return;
       }
 
-      _showMessage(
-        error.message ?? 'Authentication error.',
-        isError: true,
-      );
+      _showMessage(error.message ?? 'Authentication error.', isError: true);
     } on FirebaseException catch (error) {
       if (!mounted) {
         return;
       }
 
-      _showMessage(
-        _firebaseErrorMessage(error),
-        isError: true,
-      );
+      _showMessage(_firebaseErrorMessage(error), isError: true);
     } on ArgumentError catch (error) {
       if (!mounted) {
         return;
@@ -260,10 +300,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
         return;
       }
 
-      _showMessage(
-        error.message,
-        isError: true,
-      );
+      _showMessage(error.message, isError: true);
     } catch (error) {
       if (!mounted) {
         return;
@@ -297,10 +334,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
     }
   }
 
-  void _showMessage(
-    String message, {
-    required bool isError,
-  }) {
+  void _showMessage(String message, {required bool isError}) {
     final ColorScheme colors = Theme.of(context).colorScheme;
 
     ScaffoldMessenger.of(context)
@@ -337,17 +371,15 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
       children: <Widget>[
         Text(
           'Food record history',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(context).textTheme.headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 6),
         Text(
           'Review production, consumption, remaining meals, and waste '
           'recorded by your organization.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
+          style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: colors.onSurfaceVariant),
         ),
         const SizedBox(height: 20),
         TextField(
@@ -378,40 +410,36 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
         ),
         const SizedBox(height: 12),
         LayoutBuilder(
-          builder: (
-            BuildContext context,
-            BoxConstraints constraints,
-          ) {
+          builder: (BuildContext context, BoxConstraints constraints) {
             final bool compact = constraints.maxWidth < 560;
 
             final DropdownButtonFormField<String> mealFilter =
                 DropdownButtonFormField<String>(
-              value: _selectedMealType,
-              decoration: const InputDecoration(
-                labelText: 'Meal type',
-                prefixIcon: Icon(Icons.restaurant_menu_outlined),
-              ),
-              items: _mealTypes
-                  .map(
-                    (String mealType) =>
-                        DropdownMenuItem<String>(
-                      value: mealType,
-                      child: Text(mealType),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: _isDeleting
-                  ? null
-                  : (String? value) {
-                      if (value == null) {
-                        return;
-                      }
+                  value: _selectedMealType,
+                  decoration: const InputDecoration(
+                    labelText: 'Meal type',
+                    prefixIcon: Icon(Icons.restaurant_menu_outlined),
+                  ),
+                  items: _mealTypes
+                      .map(
+                        (String mealType) => DropdownMenuItem<String>(
+                          value: mealType,
+                          child: Text(mealType),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: _isDeleting
+                      ? null
+                      : (String? value) {
+                          if (value == null) {
+                            return;
+                          }
 
-                      setState(() {
-                        _selectedMealType = value;
-                      });
-                    },
-            );
+                          setState(() {
+                            _selectedMealType = value;
+                          });
+                        },
+                );
 
             final OutlinedButton dateFilter = OutlinedButton.icon(
               onPressed: _isDeleting ? null : _pickDateRange,
@@ -432,10 +460,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
                 children: <Widget>[
                   mealFilter,
                   const SizedBox(height: 12),
-                  SizedBox(
-                    height: 54,
-                    child: dateFilter,
-                  ),
+                  SizedBox(height: 54, child: dateFilter),
                 ],
               );
             }
@@ -444,12 +469,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
               children: <Widget>[
                 Expanded(child: mealFilter),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 54,
-                    child: dateFilter,
-                  ),
-                ),
+                Expanded(child: SizedBox(height: 54, child: dateFilter)),
               ],
             );
           },
@@ -469,9 +489,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
     );
   }
 
-  Widget _buildSummary(
-    List<DailyFoodRecord> records,
-  ) {
+  Widget _buildSummary(List<DailyFoodRecord> records) {
     int mealsPrepared = 0;
     int mealsConsumed = 0;
     int mealsRemaining = 0;
@@ -512,10 +530,179 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
       ),
     ];
 
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: cards,
+    return Wrap(spacing: 10, runSpacing: 10, children: cards);
+  }
+
+  void _showRecordImage(DailyFoodRecord record) {
+    final String? imageUrl = record.imageUrl;
+
+    if (imageUrl == null || imageUrl.trim().isEmpty) {
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+            child: InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                loadingBuilder:
+                    (
+                      BuildContext context,
+                      Widget child,
+                      ImageChunkEvent? loadingProgress,
+                    ) {
+                      if (loadingProgress == null) {
+                        return child;
+                      }
+
+                      final int? expected = loadingProgress.expectedTotalBytes;
+                      final int loaded = loadingProgress.cumulativeBytesLoaded;
+
+                      return SizedBox(
+                        height: 360,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            value: expected == null ? null : loaded / expected,
+                          ),
+                        ),
+                      );
+                    },
+                errorBuilder:
+                    (
+                      BuildContext context,
+                      Object error,
+                      StackTrace? stackTrace,
+                    ) {
+                      return SizedBox(
+                        height: 320,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 48,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Food photo could not be loaded.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRecordImage(DailyFoodRecord record) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String? imageUrl = record.imageUrl;
+
+    if (imageUrl == null || imageUrl.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: 14),
+        Text(
+          'Food photo',
+          style: Theme.of(context).textTheme.titleSmall
+              ?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: _isDeleting ? null : () => _showRecordImage(record),
+          borderRadius: BorderRadius.circular(14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.cover,
+                loadingBuilder:
+                    (
+                      BuildContext context,
+                      Widget child,
+                      ImageChunkEvent? loadingProgress,
+                    ) {
+                      if (loadingProgress == null) {
+                        return child;
+                      }
+
+                      final int? expected = loadingProgress.expectedTotalBytes;
+                      final int loaded = loadingProgress.cumulativeBytesLoaded;
+
+                      return Container(
+                        color: colors.surfaceContainerHighest,
+                        alignment: Alignment.center,
+                        child: CircularProgressIndicator(
+                          value: expected == null ? null : loaded / expected,
+                        ),
+                      );
+                    },
+                errorBuilder:
+                    (
+                      BuildContext context,
+                      Object error,
+                      StackTrace? stackTrace,
+                    ) {
+                      return Container(
+                        color: colors.surfaceContainerHighest,
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Icon(Icons.broken_image_outlined, size: 38),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Food photo unavailable',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+              ),
+            ),
+          ),
+        ),
+        if (record.imagePublicId != null &&
+            record.imagePublicId!.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'Cloudinary media linked',
+              style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ),
+      ],
     );
   }
 
@@ -525,16 +712,8 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 6,
-        ),
-        childrenPadding: const EdgeInsets.fromLTRB(
-          16,
-          0,
-          16,
-          16,
-        ),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         leading: CircleAvatar(
           backgroundColor: colors.primaryContainer,
           foregroundColor: colors.onPrimaryContainer,
@@ -542,9 +721,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
         ),
         title: Text(
           record.mealType,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
@@ -626,6 +803,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
               ],
             ),
           ),
+          _buildRecordImage(record),
           const SizedBox(height: 14),
           if (record.specialEvent)
             Container(
@@ -657,18 +835,14 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
           const SizedBox(height: 14),
           Row(
             children: <Widget>[
-              const Icon(
-                Icons.analytics_outlined,
-                size: 20,
-              ),
+              const Icon(Icons.analytics_outlined, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Consumption rate: '
                   '${_consumptionRate(record).toStringAsFixed(1)}%',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -683,8 +857,7 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
       return 0;
     }
 
-    final double value =
-        (record.mealsConsumed / record.mealsPrepared) * 100;
+    final double value = (record.mealsConsumed / record.mealsPrepared) * 100;
 
     return value.clamp(0, 100);
   }
@@ -701,30 +874,23 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
               radius: 30,
               backgroundColor: colors.primaryContainer,
               foregroundColor: colors.onPrimaryContainer,
-              child: const Icon(
-                Icons.receipt_long_outlined,
-                size: 30,
-              ),
+              child: const Icon(Icons.receipt_long_outlined, size: 30),
             ),
             const SizedBox(height: 16),
             Text(
-              _hasActiveFilters
-                  ? 'No matching records'
-                  : 'No food records yet',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              _hasActiveFilters ? 'No matching records' : 'No food records yet',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
               _hasActiveFilters
                   ? 'Try changing the search or filters.'
                   : 'Daily food records added by your organization '
-                    'will appear here.',
+                        'will appear here.',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
             ),
             if (_hasActiveFilters) ...<Widget>[
               const SizedBox(height: 14),
@@ -760,26 +926,21 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
               radius: 32,
               backgroundColor: colors.errorContainer,
               foregroundColor: colors.onErrorContainer,
-              child: const Icon(
-                Icons.error_outline_rounded,
-                size: 30,
-              ),
+              child: const Icon(Icons.error_outline_rounded, size: 30),
             ),
             const SizedBox(height: 16),
             Text(
               'Could not load food records',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
@@ -804,60 +965,56 @@ class _RecordHistoryScreenState extends State<RecordHistoryScreen> {
 
     return StreamBuilder<List<DailyFoodRecord>>(
       stream: _repository.watchRecords(widget.organizationId),
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<List<DailyFoodRecord>> snapshot,
-      ) {
-        if (snapshot.hasError) {
-          return _buildError(snapshot.error!);
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        }
-
-        final List<DailyFoodRecord> records =
-            snapshot.data ?? <DailyFoodRecord>[];
-
-        final List<DailyFoodRecord> filteredRecords =
-            records.where(_matchesFilters).toList();
-
-        return RefreshIndicator(
-          onRefresh: () async {
-            await Future<void>.delayed(
-              const Duration(milliseconds: 300),
-            );
-            if (mounted) {
-              setState(() {});
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<List<DailyFoodRecord>> snapshot,
+          ) {
+            if (snapshot.hasError) {
+              return _buildError(snapshot.error!);
             }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final List<DailyFoodRecord> records =
+                snapshot.data ?? <DailyFoodRecord>[];
+
+            final List<DailyFoodRecord> filteredRecords = records
+                .where(_matchesFilters)
+                .toList();
+
+            return RefreshIndicator(
+              onRefresh: () async {
+                await Future<void>.delayed(const Duration(milliseconds: 300));
+                if (mounted) {
+                  setState(() {});
+                }
+              },
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                children: <Widget>[
+                  _buildHeader(),
+                  const SizedBox(height: 20),
+                  _buildSummary(filteredRecords),
+                  const SizedBox(height: 22),
+                  if (filteredRecords.isEmpty)
+                    _buildEmptyState()
+                  else
+                    ...filteredRecords.map(_buildRecordCard),
+                ],
+              ),
+            );
           },
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-            children: <Widget>[
-              _buildHeader(),
-              const SizedBox(height: 20),
-              _buildSummary(filteredRecords),
-              const SizedBox(height: 22),
-              if (filteredRecords.isEmpty)
-                _buildEmptyState()
-              else
-                ...filteredRecords.map(_buildRecordCard),
-            ],
-          ),
-        );
-      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Record History'),
-      ),
+      appBar: AppBar(title: const Text('Record History')),
       body: _buildBody(),
     );
   }
@@ -895,16 +1052,12 @@ class _SummaryCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                    Text(title, style: Theme.of(context).textTheme.bodySmall),
                     const SizedBox(height: 4),
                     Text(
                       value,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ],
                 ),
@@ -934,10 +1087,7 @@ class _MetricChip extends StatelessWidget {
 
     return Container(
       constraints: const BoxConstraints(minWidth: 120),
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 10,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
@@ -950,15 +1100,11 @@ class _MetricChip extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
+              Text(label, style: Theme.of(context).textTheme.labelSmall),
               Text(
                 value,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(context).textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
             ],
           ),

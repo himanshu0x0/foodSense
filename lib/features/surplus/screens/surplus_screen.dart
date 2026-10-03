@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:foodsense/core/network/foodsense_ai_api_client.dart';
 import 'package:foodsense/features/forecast/providers/forecast_provider.dart';
 
 class SurplusScreen extends ConsumerStatefulWidget {
-  const SurplusScreen({
-    required this.organizationId,
-    super.key,
-  });
+  const SurplusScreen({required this.organizationId, super.key});
 
   final String organizationId;
 
@@ -43,10 +41,14 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    if (widget.organizationId.trim().isEmpty) {
+      return const Scaffold(
+        body: Center(child: Text('Organization information is missing.')),
+      );
+    }
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Surplus Prediction'),
-      ),
+      appBar: AppBar(title: const Text('Surplus Prediction')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -113,18 +115,19 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.restaurant_outlined),
               ),
-              items: const <String>[
-                'Breakfast',
-                'Lunch',
-                'Dinner',
-                'Snack',
-                'Other',
-              ].map((String meal) {
-                return DropdownMenuItem<String>(
-                  value: meal,
-                  child: Text(meal),
-                );
-              }).toList(),
+              items:
+                  const <String>[
+                    'Breakfast',
+                    'Lunch',
+                    'Dinner',
+                    'Snack',
+                    'Other',
+                  ].map((String meal) {
+                    return DropdownMenuItem<String>(
+                      value: meal,
+                      child: Text(meal),
+                    );
+                  }).toList(),
               onChanged: (String? value) {
                 if (value != null) {
                   setState(() {
@@ -376,6 +379,50 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
         ),
         const SizedBox(height: 12),
         _buildActionGuidance(theme, result),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                CircleAvatar(
+                  backgroundColor: theme.colorScheme.secondaryContainer,
+                  child: Icon(
+                    Icons.compare_arrows_rounded,
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Compare production scenarios',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Test multiple production quantities against the same demand forecast.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () {
+                    context.push('/surplus-scenarios/${widget.organizationId}');
+                  },
+                  child: const Text('Compare'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -411,10 +458,7 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(
-              Icons.info_outline,
-              color: theme.colorScheme.primary,
-            ),
+            Icon(Icons.info_outline, color: theme.colorScheme.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -446,9 +490,7 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
   }
 
   void _requestPrediction() {
-    final int? expectedPeople = int.tryParse(
-      _peopleController.text.trim(),
-    );
+    final int? expectedPeople = int.tryParse(_peopleController.text.trim());
     final int? plannedProduction = int.tryParse(
       _productionController.text.trim(),
     );
@@ -478,9 +520,7 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
   void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _friendlyError(Object error) {
@@ -512,10 +552,7 @@ class _SurplusScreenState extends ConsumerState<SurplusScreen> {
         .replaceAll('_', ' ')
         .split(' ')
         .where((String part) => part.isNotEmpty)
-        .map(
-          (String part) =>
-              '${part[0].toUpperCase()}${part.substring(1)}',
-        )
+        .map((String part) => '${part[0].toUpperCase()}${part.substring(1)}')
         .join(' ');
   }
 }
@@ -570,31 +607,25 @@ class SurplusQuery {
     final a = left.toLocal();
     final b = right.toLocal();
 
-    return a.year == b.year &&
-        a.month == b.month &&
-        a.day == b.day;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 }
 
-final surplusProvider =
-    FutureProvider.autoDispose.family<SurplusResult, SurplusQuery>(
-  (ref, query) async {
-    final apiClient = ref.watch(foodSenseAiApiClientProvider);
+final surplusProvider = FutureProvider.autoDispose
+    .family<SurplusResult, SurplusQuery>((ref, query) async {
+      final apiClient = ref.watch(foodSenseAiApiClientProvider);
 
-    final response = await apiClient.surplus(
-      <String, dynamic>{
+      final response = await apiClient.surplus(<String, dynamic>{
         'organization_id': query.organizationId,
         'prediction_date': _dateOnly(query.predictionDate),
         'meal_type': query.mealType,
         'planned_production': query.plannedProduction,
         'expected_people': query.expectedPeople,
         'special_event': query.specialEvent,
-      },
-    );
+      });
 
-    return SurplusResult.fromMap(response);
-  },
-);
+      return SurplusResult.fromMap(response);
+    });
 
 class SurplusResult {
   const SurplusResult({
@@ -639,28 +670,19 @@ class SurplusResult {
         map['planned_production'],
         'planned_production',
       ),
-      predictedDemand: _intValue(
-        map['predicted_demand'],
-        'predicted_demand',
-      ),
+      predictedDemand: _intValue(map['predicted_demand'], 'predicted_demand'),
       predictedSurplus: _intValue(
         map['predicted_surplus'],
         'predicted_surplus',
       ),
-      surplusPercent: _doubleValue(
-        map['surplus_percent'],
-        'surplus_percent',
-      ),
+      surplusPercent: _doubleValue(map['surplus_percent'], 'surplus_percent'),
       surplusRisk: _stringValue(map['surplus_risk'], 'surplus_risk'),
       estimatedWasteKg: _doubleValue(
         map['estimated_waste_kg'],
         'estimated_waste_kg',
       ),
       method: _stringValue(map['method'], 'method'),
-      trainingRecords: _intValue(
-        map['training_records'],
-        'training_records',
-      ),
+      trainingRecords: _intValue(map['training_records'], 'training_records'),
       fallbackUsed: map['fallback_used'] == true,
       generatedAt: _dateValueTime(map['generated_at'], 'generated_at'),
     );
@@ -671,9 +693,7 @@ class SurplusResult {
       return value.trim();
     }
 
-    throw FormatException(
-      'Surplus field "$field" must be a non-empty string.',
-    );
+    throw FormatException('Surplus field "$field" must be a non-empty string.');
   }
 
   static int _intValue(dynamic value, String field) {
@@ -692,9 +712,7 @@ class SurplusResult {
       }
     }
 
-    throw FormatException(
-      'Surplus field "$field" must be an integer.',
-    );
+    throw FormatException('Surplus field "$field" must be an integer.');
   }
 
   static double _doubleValue(dynamic value, String field) {
@@ -709,9 +727,7 @@ class SurplusResult {
       }
     }
 
-    throw FormatException(
-      'Surplus field "$field" must be a number.',
-    );
+    throw FormatException('Surplus field "$field" must be a number.');
   }
 
   static DateTime _dateValue(dynamic value, String field) {
@@ -726,9 +742,7 @@ class SurplusResult {
       }
     }
 
-    throw FormatException(
-      'Surplus field "$field" must be a valid date.',
-    );
+    throw FormatException('Surplus field "$field" must be a valid date.');
   }
 
   static DateTime _dateValueTime(dynamic value, String field) {
@@ -739,9 +753,7 @@ class SurplusResult {
       }
     }
 
-    throw FormatException(
-      'Surplus field "$field" must be a valid timestamp.',
-    );
+    throw FormatException('Surplus field "$field" must be a valid timestamp.');
   }
 }
 
@@ -795,10 +807,7 @@ class _MetricTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          Text(
-            unit,
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(unit, style: theme.textTheme.bodySmall),
         ],
       ),
     );
@@ -806,10 +815,7 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.label,
-    required this.value,
-  });
+  const _DetailRow({required this.label, required this.value});
 
   final String label;
   final String value;
@@ -820,16 +826,13 @@ class _DetailRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: <Widget>[
-          Expanded(
-            child: Text(label),
-          ),
+          Expanded(child: Text(label)),
           Flexible(
             child: Text(
               value,
               textAlign: TextAlign.end,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -839,10 +842,7 @@ class _DetailRow extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.icon,
-  });
+  const _StatusChip({required this.label, required this.icon});
 
   final String label;
   final IconData icon;

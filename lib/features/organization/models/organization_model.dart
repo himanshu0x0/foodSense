@@ -127,14 +127,14 @@ class OrganizationModel {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        name,
-        type,
-        address,
-        city,
-        state,
-        country,
-        peopleServed,
-        ownerId,
-      );
+    id,
+    name,
+    type,
+    address,
+    city,
+    state,
+    country,
+    peopleServed,
+    ownerId,
+  );
 }
